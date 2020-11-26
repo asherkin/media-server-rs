@@ -1,0 +1,14 @@
+[package]
+name = "media-server-rs"
+version = "0.1.0"
+authors = ["Asher Baker <asherkin@limetech.io>"]
+edition = "2018"
+
+[dependencies]
+cxx = "1"
+openssl-sys = "0.9"
+
+[build-dependencies]
+cc = { version = "1", features = ["parallel"] }
+cxx-build = "1"
+pkg-config = "0.3"
