@@ -1,34 +1,60 @@
 #pragma once
-
-#include "RTPBundleTransport.h"
-
 #include "rust/cxx.h"
 
-using DTLSConnectionHash = DTLSConnection::Hash;
-using DTLSICETransportDTLSState = DTLSICETransport::DTLSState;
-using RTPBundleTransportConnection = RTPBundleTransport::Connection;
+#include "DTLSICETransport.h"
+#include "RTPBundleTransport.h"
 
-// TODO: There is *nothing* safe about this.
-struct RTPBundleTransportConnectionWrapper {
-    RTPBundleTransportConnectionWrapper(RTPBundleTransportConnection *connection):
-        connection(connection) {}
+using DtlsConnectionHash = DTLSConnection::Hash;
+using DtlsIceTransportDtlsState = DTLSICETransport::DTLSState;
 
-    RTPBundleTransportConnection *connection;
-};
-
-struct DtlsIceTransportListener;
+class Properties;
 
 void logger_enable_log(bool flag);
 void logger_enable_debug(bool flag);
 void logger_enable_ultra_debug(bool flag);
+
 void openssl_class_init();
+
 int dtls_connection_initialize();
-rust::String dtls_connection_get_certificate_fingerprint(DTLSConnectionHash hash);
-std::unique_ptr<Properties> new_properties();
-void properties_set_int(const std::unique_ptr<Properties> &properties, rust::Str key, int value);
-void properties_set_bool(const std::unique_ptr<Properties> &properties, rust::Str key, bool value);
-void properties_set_string(const std::unique_ptr<Properties> &properties, rust::Str key, rust::Str value);
-std::unique_ptr<RTPBundleTransport> new_rtp_bundle_transport();
-std::unique_ptr<RTPBundleTransportConnectionWrapper> rtp_bundle_transport_add_ice_transport(const std::unique_ptr<RTPBundleTransport> &transport, rust::Str username, const Properties &properties);
-void rtp_bundle_transport_remove_ice_transport(const std::unique_ptr<RTPBundleTransport> &transport, rust::Str username);
-void rtp_bundle_transport_connection_set_listener(const std::unique_ptr<RTPBundleTransportConnectionWrapper> &connection, DtlsIceTransportListener &listener);
+
+rust::String dtls_connection_get_certificate_fingerprint(DtlsConnectionHash hash);
+
+struct PropertiesFacade {
+    PropertiesFacade();
+    operator const Properties &() const;
+    void set_int(rust::Str key, int value) const;
+    void set_bool(rust::Str key, bool value) const;
+    void set_string(rust::Str key, rust::Str value) const;
+
+private:
+    // TODO: We need an indirection layer here due to constness, is there something better?
+    std::unique_ptr<Properties> properties;
+};
+
+std::unique_ptr<PropertiesFacade> new_properties();
+
+struct DtlsIceTransportListener;
+struct DtlsIceTransportListenerAdapter;
+
+struct RTPBundleTransportConnectionFacade {
+    RTPBundleTransportConnectionFacade(std::shared_ptr<RTPBundleTransport> transport, std::string username, RTPBundleTransport::Connection *connection);
+    ~RTPBundleTransportConnectionFacade();
+    void set_listener(rust::Box<DtlsIceTransportListener> listener) const;
+
+private:
+    std::shared_ptr<RTPBundleTransport> transport;
+    std::string username;
+    RTPBundleTransport::Connection *connection;
+    mutable std::unique_ptr<DtlsIceTransportListenerAdapter> active_listener;
+};
+
+struct RtpBundleTransportFacade {
+    RtpBundleTransportFacade();
+    unsigned short init() const;
+    std::unique_ptr<RTPBundleTransportConnectionFacade> add_ice_transport(rust::Str username, const PropertiesFacade &properties) const;
+
+private:
+    std::shared_ptr<RTPBundleTransport> transport;
+};
+
+std::unique_ptr<RtpBundleTransportFacade> new_rtp_bundle_transport();
