@@ -1,4 +1,69 @@
-use std::path::PathBuf;
+use std::path::{PathBuf, Path};
+use std::fs;
+
+// Copied from cxx_build (modified with canonicalize)
+fn symlink_file(original: impl AsRef<Path>, link: impl AsRef<Path>) -> std::io::Result<()> {
+    let original = original.as_ref().canonicalize()?;
+    let link = link.as_ref();
+
+    let mut create_dir_error = None;
+    if link.exists() {
+        best_effort_remove(link);
+    } else {
+        let parent = link.parent().unwrap();
+        create_dir_error = fs::create_dir_all(parent).err();
+    }
+
+    match symlink_or_copy(original, link) {
+        // As long as symlink_or_copy succeeded, ignore any create_dir_all error.
+        Ok(()) => Ok(()),
+        // If create_dir_all and symlink_or_copy both failed, prefer the first error.
+        Err(err) => Err(create_dir_error.unwrap_or(err)),
+    }
+}
+
+// Copied from cxx_build
+fn best_effort_remove(path: &Path) {
+    let file_type = match if cfg!(windows) {
+        // On Windows, the correct choice of remove_file vs remove_dir needs to
+        // be used according to what the symlink *points to*. Trying to use
+        // remove_file to remove a symlink which points to a directory fails
+        // with "Access is denied".
+        fs::metadata(path)
+    } else {
+        // On non-Windows, we check metadata not following symlinks. All
+        // symlinks are removed using remove_file.
+        fs::symlink_metadata(path)
+    } {
+        Ok(metadata) => metadata.file_type(),
+        Err(_) => return,
+    };
+
+    if file_type.is_dir() {
+        let _ = fs::remove_dir_all(path);
+    } else {
+        let _ = fs::remove_file(path);
+    }
+}
+
+#[cfg(unix)]
+use std::os::unix::fs::symlink as symlink_or_copy;
+
+// Copied from cxx_build
+#[cfg(windows)]
+fn symlink_or_copy(original: impl AsRef<Path>, link: impl AsRef<Path>) -> std::io::Result<()> {
+    // Pre-Windows 10, symlinks require admin privileges. Since Windows 10, they
+    // require Developer Mode. If it fails, fall back to copying the file.
+    let original = original.as_ref();
+    let link = link.as_ref();
+    if std::os::windows::fs::symlink_file(original, link).is_err() {
+        fs::copy(original, link)?;
+    }
+    Ok(())
+}
+
+#[cfg(not(any(unix, windows)))]
+use fs::copy as symlink_or_copy;
 
 fn main() {
     let openssl = pkg_config::probe_library("openssl").unwrap();
@@ -157,6 +222,13 @@ fn main() {
         .includes(&openssl_include_paths)
         .includes(&media_server_include_paths)
         .compile("media-server");
+
+    // Copy our bridge header file(s) into the cxxbridge "shared" directory, cxxbridge doesn't use
+    // this directory for anything (according to the docs, just as a debugging aid), but by adding
+    // it to a CMake include path we can get code completion on the C++ side.
+    // TODO: This isn't very sane, but it greatly simplifies development.
+    // TODO: Respect CARGO_TARGET_DIR - ideally cxx_build would expose shared_dir.
+    symlink_file("include/bridge.h", "target/cxxbridge/media-server-rs/include/bridge.h").unwrap();
 
     cxx_build::bridge("src/lib.rs")
         .warnings(false)
