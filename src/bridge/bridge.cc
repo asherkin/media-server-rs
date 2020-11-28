@@ -1,5 +1,5 @@
-#include "media-server-rs/include/bridge.h"
-#include "media-server-rs/src/lib.rs.h"
+#include "media-server/include/bridge.h"
+#include "media-server/src/bridge/mod.rs.h"
 
 #include "OpenSSL.h"
 
@@ -60,8 +60,8 @@ std::unique_ptr<PropertiesFacade> new_properties() {
     return std::make_unique<PropertiesFacade>();
 }
 
-struct DtlsIceTransportListenerAdapter: DTLSICETransport::Listener {
-    explicit DtlsIceTransportListenerAdapter(rust::Box<DtlsIceTransportListener> listener):
+struct DtlsIceTransportListenerCxxAdapter: DTLSICETransport::Listener {
+    explicit DtlsIceTransportListenerCxxAdapter(rust::Box<DtlsIceTransportListenerRustAdapter> listener):
         listener(std::move(listener)) {};
 
     void onICETimeout() override {
@@ -76,7 +76,7 @@ struct DtlsIceTransportListenerAdapter: DTLSICETransport::Listener {
         listener->on_remote_ice_candidate_activated(ip, port, priority);
     }
 
-    rust::Box<DtlsIceTransportListener> listener;
+    rust::Box<DtlsIceTransportListenerRustAdapter> listener;
 };
 
 RTPBundleTransportConnectionFacade::RTPBundleTransportConnectionFacade(std::shared_ptr<RTPBundleTransport> transport, std::string username, RTPBundleTransport::Connection *connection):
@@ -89,8 +89,8 @@ RTPBundleTransportConnectionFacade::~RTPBundleTransportConnectionFacade() {
     transport->RemoveICETransport(username);
 }
 
-void RTPBundleTransportConnectionFacade::set_listener(rust::Box<DtlsIceTransportListener> listener) const {
-    active_listener = std::make_unique<DtlsIceTransportListenerAdapter>(std::move(listener));
+void RTPBundleTransportConnectionFacade::set_listener(rust::Box<DtlsIceTransportListenerRustAdapter> listener) const {
+    active_listener = std::make_unique<DtlsIceTransportListenerCxxAdapter>(std::move(listener));
     connection->transport->SetListener(active_listener.get());
 }
 

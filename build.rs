@@ -228,18 +228,18 @@ fn main() {
     // it to a CMake include path we can get code completion on the C++ side.
     // TODO: This isn't very sane, but it greatly simplifies development.
     // TODO: Respect CARGO_TARGET_DIR - ideally cxx_build would expose shared_dir.
-    symlink_file("include/bridge.h", "target/cxxbridge/media-server-rs/include/bridge.h").unwrap();
+    symlink_file("include/bridge.h", "target/cxxbridge/media-server/include/bridge.h").unwrap();
 
-    cxx_build::bridge("src/lib.rs")
+    cxx_build::bridge("src/bridge/mod.rs")
         .warnings(false)
         .flag_if_supported("-std=c++17")
         .flag_if_supported("-march=native")
-        .file("src/bridge.cc")
+        .file("src/bridge/bridge.cc")
         .includes(&openssl_include_paths)
         .includes(&media_server_include_paths)
-        .compile("media-server-rs");
+        .compile("media-server-bridge");
 
-    println!("cargo:rerun-if-changed=src/lib.rs");
-    println!("cargo:rerun-if-changed=src/bridge.cc");
     println!("cargo:rerun-if-changed=include/bridge.h");
+    println!("cargo:rerun-if-changed=src/bridge/mod.rs");
+    println!("cargo:rerun-if-changed=src/bridge/bridge.cc");
 }

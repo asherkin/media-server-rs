@@ -1,9 +1,9 @@
 [package]
-name = "media-server-rs"
+name = "media-server"
 version = "0.1.0"
 authors = ["Asher Baker <asherkin@limetech.io>"]
 edition = "2018"
-links = "media-server-rs"
+links = "media-server"
 
 [dependencies]
 cxx = "1"

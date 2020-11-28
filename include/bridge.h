@@ -33,20 +33,20 @@ private:
 
 std::unique_ptr<PropertiesFacade> new_properties();
 
-struct DtlsIceTransportListener;
-struct DtlsIceTransportListenerAdapter;
+struct DtlsIceTransportListenerRustAdapter;
+struct DtlsIceTransportListenerCxxAdapter;
 
 struct RTPBundleTransportConnectionFacade {
     RTPBundleTransportConnectionFacade(std::shared_ptr<RTPBundleTransport> transport, std::string username, RTPBundleTransport::Connection *connection);
     ~RTPBundleTransportConnectionFacade();
-    void set_listener(rust::Box<DtlsIceTransportListener> listener) const;
+    void set_listener(rust::Box<DtlsIceTransportListenerRustAdapter> listener) const;
     void add_remote_candidate(rust::Str ip, uint16_t port) const;
 
 private:
     std::shared_ptr<RTPBundleTransport> transport;
     std::string username;
     RTPBundleTransport::Connection *connection;
-    mutable std::unique_ptr<DtlsIceTransportListenerAdapter> active_listener;
+    mutable std::unique_ptr<DtlsIceTransportListenerCxxAdapter> active_listener;
 };
 
 struct RtpBundleTransportFacade {
