@@ -1,47 +1,20 @@
 #![cfg(test)]
 
 use super::*;
-use super::ffi::*;
 use futures::future::Either;
 use futures::channel::oneshot;
-use parking_lot::{Mutex, const_mutex};
-
-static INIT_MUTEX: Mutex<bool> = const_mutex(false);
-
-fn prepare_library() {
-    println!("main() thread: {:?}", std::thread::current());
-
-    let mut is_init = INIT_MUTEX.lock();
-    if *is_init {
-        println!("library already initialised");
-        return;
-    } else {
-        *is_init = true;
-    }
-
-    logger_enable_log(true);
-    logger_enable_debug(true);
-    logger_enable_ultra_debug(true);
-
-    openssl_class_init();
-
-    // It is unfortunate that this is global state.
-    dtls_connection_initialize();
-
-    println!("library initialisation done");
-}
 
 #[test]
 fn init() {
-    prepare_library();
+    crate::library_init().unwrap();
 
-    let fingerprint = dtls_connection_get_certificate_fingerprint(DtlsConnectionHash::SHA256);
+    let fingerprint = dtls_connection_get_certificate_fingerprint(DtlsConnectionHash::SHA256).unwrap();
     println!("Fingerprint: {:?}", fingerprint);
 }
 
 #[test]
 fn create_transport() {
-    prepare_library();
+    crate::library_init().unwrap();
 
     let transport = new_rtp_bundle_transport(0).unwrap();
 
@@ -51,7 +24,7 @@ fn create_transport() {
 
 #[test]
 fn create_connection_failure() {
-    prepare_library();
+    crate::library_init().unwrap();
 
     let transport = new_rtp_bundle_transport(0).unwrap();
 
@@ -63,9 +36,9 @@ fn create_connection_failure() {
 
 #[test]
 fn transport_connection() {
-    prepare_library();
+    crate::library_init().unwrap();
 
-    let fingerprint = dtls_connection_get_certificate_fingerprint(DtlsConnectionHash::SHA256);
+    let fingerprint = dtls_connection_get_certificate_fingerprint(DtlsConnectionHash::SHA256).unwrap();
 
     let transport_one = new_rtp_bundle_transport(0).unwrap();
 

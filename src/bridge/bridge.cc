@@ -22,15 +22,24 @@ void logger_enable_ultra_debug(bool flag) {
 }
 
 void openssl_class_init() {
-    OpenSSL::ClassInit();
+    if (!OpenSSL::ClassInit()) {
+        throw std::runtime_error("openssl initialization failed");
+    }
 }
 
-int dtls_connection_initialize() {
-    return DTLSConnection::Initialize();
+void dtls_connection_initialize() {
+    if (DTLSConnection::Initialize() == 0) {
+        throw std::runtime_error("dtls initialization failed");
+    }
 }
 
 rust::String dtls_connection_get_certificate_fingerprint(DtlsConnectionHash hash) {
-    return DTLSConnection::GetCertificateFingerPrint(hash);
+    auto fingerprint = DTLSConnection::GetCertificateFingerPrint(hash);
+    if (fingerprint.empty()) {
+        throw std::runtime_error("no certificate fingerprint for hash - dtls not initialized?");
+    }
+
+    return fingerprint;
 }
 
 PropertiesFacade::PropertiesFacade():

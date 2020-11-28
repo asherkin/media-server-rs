@@ -38,10 +38,10 @@ mod ffi {
         fn logger_enable_debug(flag: bool);
         fn logger_enable_ultra_debug(flag: bool);
 
-        fn openssl_class_init();
+        fn openssl_class_init() -> Result<()>;
 
-        fn dtls_connection_initialize() -> i32;
-        fn dtls_connection_get_certificate_fingerprint(hash: DtlsConnectionHash) -> String;
+        fn dtls_connection_initialize() -> Result<()>;
+        fn dtls_connection_get_certificate_fingerprint(hash: DtlsConnectionHash) -> Result<String>;
 
         type PropertiesFacade;
         fn new_properties() -> UniquePtr<PropertiesFacade>;
@@ -60,7 +60,7 @@ mod ffi {
     }
 }
 
-pub use ffi::DtlsIceTransportDtlsState;
+pub use ffi::*;
 
 impl std::fmt::Debug for DtlsIceTransportDtlsState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -82,7 +82,6 @@ pub trait DtlsIceTransportListener: Send {
     fn on_remote_ice_candidate_activated(&mut self, ip: &str, port: u16, priority: u32) {}
 }
 
-// TODO: Figure out why this needs to be pub - it is something in cxx::bridge
 pub struct DtlsIceTransportListenerRustAdapter(Box<dyn DtlsIceTransportListener>);
 
 impl DtlsIceTransportListenerRustAdapter {

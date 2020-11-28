@@ -15,7 +15,7 @@ void logger_enable_ultra_debug(bool flag);
 
 void openssl_class_init();
 
-int dtls_connection_initialize();
+void dtls_connection_initialize();
 
 rust::String dtls_connection_get_certificate_fingerprint(DtlsConnectionHash hash);
 
