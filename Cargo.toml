@@ -9,6 +9,11 @@ links = "media-server-rs"
 cxx = "1"
 openssl-sys = "0.9"
 
+[dev-dependencies]
+parking_lot = "0.11"
+futures = "0.3"
+futures-timer = "3"
+
 [build-dependencies]
 cc = { version = "1", features = ["parallel"] }
 cxx-build = "1"

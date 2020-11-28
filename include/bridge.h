@@ -40,6 +40,7 @@ struct RTPBundleTransportConnectionFacade {
     RTPBundleTransportConnectionFacade(std::shared_ptr<RTPBundleTransport> transport, std::string username, RTPBundleTransport::Connection *connection);
     ~RTPBundleTransportConnectionFacade();
     void set_listener(rust::Box<DtlsIceTransportListener> listener) const;
+    void add_remote_candidate(rust::Str ip, uint16_t port) const;
 
 private:
     std::shared_ptr<RTPBundleTransport> transport;
@@ -49,12 +50,12 @@ private:
 };
 
 struct RtpBundleTransportFacade {
-    RtpBundleTransportFacade();
-    unsigned short init() const;
+    RtpBundleTransportFacade(uint16_t port = 0);
+    uint16_t get_local_port() const;
     std::unique_ptr<RTPBundleTransportConnectionFacade> add_ice_transport(rust::Str username, const PropertiesFacade &properties) const;
 
 private:
     std::shared_ptr<RTPBundleTransport> transport;
 };
 
-std::unique_ptr<RtpBundleTransportFacade> new_rtp_bundle_transport();
+std::unique_ptr<RtpBundleTransportFacade> new_rtp_bundle_transport(uint16_t port = 0);

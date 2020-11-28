@@ -94,24 +94,33 @@ void RTPBundleTransportConnectionFacade::set_listener(rust::Box<DtlsIceTransport
     connection->transport->SetListener(active_listener.get());
 }
 
-RtpBundleTransportFacade::RtpBundleTransportFacade():
-    transport(std::make_shared<RTPBundleTransport>()) {}
+void RTPBundleTransportConnectionFacade::add_remote_candidate(rust::Str ip, uint16_t port) const {
+    std::string ipString = std::string(ip);
+    transport->AddRemoteCandidate(username, ipString.c_str(), port);
+}
 
-unsigned short RtpBundleTransportFacade::init() const {
-    return (unsigned short)transport->Init();
+RtpBundleTransportFacade::RtpBundleTransportFacade(uint16_t port):
+    transport(std::make_shared<RTPBundleTransport>()) {
+    if (transport->Init(port) == 0) {
+        throw std::runtime_error("failed to open socket");
+    }
+}
+
+uint16_t RtpBundleTransportFacade::get_local_port() const {
+    return (uint16_t)transport->GetLocalPort();
 }
 
 std::unique_ptr<RTPBundleTransportConnectionFacade> RtpBundleTransportFacade::add_ice_transport(rust::Str username, const PropertiesFacade &properties) const {
     std::string usernameString = std::string(username);
+
     auto connection = transport->AddICETransport(usernameString, properties);
     if (!connection) {
-        // TODO: This should throw on failure.
-        return nullptr;
+        throw std::runtime_error("ice transport creation failed");
     }
 
     return std::make_unique<RTPBundleTransportConnectionFacade>(transport, usernameString, connection);
 }
 
-std::unique_ptr<RtpBundleTransportFacade> new_rtp_bundle_transport() {
-    return std::make_unique<RtpBundleTransportFacade>();
+std::unique_ptr<RtpBundleTransportFacade> new_rtp_bundle_transport(uint16_t port) {
+    return std::make_unique<RtpBundleTransportFacade>(port);
 }
