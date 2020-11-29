@@ -49,14 +49,14 @@ mod ffi {
         fn set_bool(self: &PropertiesFacade, key: &str, value: bool);
         fn set_string(self: &PropertiesFacade, key: &str, value: &str);
 
-        type RTPBundleTransportConnectionFacade;
-        fn set_listener(self: &RTPBundleTransportConnectionFacade, listener: Box<DtlsIceTransportListenerRustAdapter>);
-        fn add_remote_candidate(self: &RTPBundleTransportConnectionFacade, ip: &str, port: u16);
+        type RtpBundleTransportConnectionFacade;
+        fn set_listener(self: &RtpBundleTransportConnectionFacade, listener: Box<DtlsIceTransportListenerRustAdapter>);
+        fn add_remote_candidate(self: &RtpBundleTransportConnectionFacade, ip: &str, port: u16);
 
         type RtpBundleTransportFacade;
         fn new_rtp_bundle_transport(port: u16) -> Result<UniquePtr<RtpBundleTransportFacade>>;
         fn get_local_port(self: &RtpBundleTransportFacade) -> u16;
-        fn add_ice_transport(self: &RtpBundleTransportFacade, username: &str, properties: &PropertiesFacade) -> Result<UniquePtr<RTPBundleTransportConnectionFacade>>;
+        fn add_ice_transport(self: &RtpBundleTransportFacade, username: &str, properties: &PropertiesFacade) -> Result<UniquePtr<RtpBundleTransportConnectionFacade>>;
     }
 }
 

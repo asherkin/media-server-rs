@@ -88,22 +88,22 @@ struct DtlsIceTransportListenerCxxAdapter: DTLSICETransport::Listener {
     rust::Box<DtlsIceTransportListenerRustAdapter> listener;
 };
 
-RTPBundleTransportConnectionFacade::RTPBundleTransportConnectionFacade(std::shared_ptr<RTPBundleTransport> transport, std::string username, RTPBundleTransport::Connection *connection):
+RtpBundleTransportConnectionFacade::RtpBundleTransportConnectionFacade(std::shared_ptr<RTPBundleTransport> transport, std::string username, RTPBundleTransport::Connection *connection):
     transport(std::move(transport)), username(std::move(username)), connection(connection), active_listener(nullptr) {}
 
-RTPBundleTransportConnectionFacade::~RTPBundleTransportConnectionFacade() {
+RtpBundleTransportConnectionFacade::~RtpBundleTransportConnectionFacade() {
     connection->transport->SetListener(nullptr);
     active_listener = nullptr;
 
     transport->RemoveICETransport(username);
 }
 
-void RTPBundleTransportConnectionFacade::set_listener(rust::Box<DtlsIceTransportListenerRustAdapter> listener) const {
+void RtpBundleTransportConnectionFacade::set_listener(rust::Box<DtlsIceTransportListenerRustAdapter> listener) const {
     active_listener = std::make_unique<DtlsIceTransportListenerCxxAdapter>(std::move(listener));
     connection->transport->SetListener(active_listener.get());
 }
 
-void RTPBundleTransportConnectionFacade::add_remote_candidate(rust::Str ip, uint16_t port) const {
+void RtpBundleTransportConnectionFacade::add_remote_candidate(rust::Str ip, uint16_t port) const {
     std::string ipString = std::string(ip);
     transport->AddRemoteCandidate(username, ipString.c_str(), port);
 }
@@ -119,7 +119,7 @@ uint16_t RtpBundleTransportFacade::get_local_port() const {
     return (uint16_t)transport->GetLocalPort();
 }
 
-std::unique_ptr<RTPBundleTransportConnectionFacade> RtpBundleTransportFacade::add_ice_transport(rust::Str username, const PropertiesFacade &properties) const {
+std::unique_ptr<RtpBundleTransportConnectionFacade> RtpBundleTransportFacade::add_ice_transport(rust::Str username, const PropertiesFacade &properties) const {
     std::string usernameString = std::string(username);
 
     auto connection = transport->AddICETransport(usernameString, properties);
@@ -127,7 +127,7 @@ std::unique_ptr<RTPBundleTransportConnectionFacade> RtpBundleTransportFacade::ad
         throw std::runtime_error("ice transport creation failed");
     }
 
-    return std::make_unique<RTPBundleTransportConnectionFacade>(transport, usernameString, connection);
+    return std::make_unique<RtpBundleTransportConnectionFacade>(transport, usernameString, connection);
 }
 
 std::unique_ptr<RtpBundleTransportFacade> new_rtp_bundle_transport(uint16_t port) {
