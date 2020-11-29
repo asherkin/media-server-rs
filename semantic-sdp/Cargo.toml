@@ -1,0 +1,7 @@
+[package]
+name = "semantic-sdp"
+version = "0.1.0"
+authors = ["Asher Baker <asherkin@limetech.io>"]
+edition = "2018"
+
+[dependencies]
