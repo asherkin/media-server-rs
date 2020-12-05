@@ -1,9 +1,13 @@
 [package]
-name = "semantic-sdp"
+name = "semantic-sdp-derive"
 version = "0.1.0"
 authors = ["Asher Baker <asherkin@limetech.io>"]
 edition = "2018"
 
+[lib]
+proc-macro = true
+
 [dependencies]
-nom = "6"
-semantic-sdp-derive = { version = "0.1", path = "semantic-sdp-derive" }
+syn = "1"
+quote = "1"
+proc-macro2 = "1"
