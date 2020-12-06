@@ -1,6 +1,6 @@
 use ordered_multimap::ListOrderedMultimap;
 
-use crate::attribute_types::{parse_attribute, NamedAttribute, ParsableAttribute};
+use crate::attributes::{parse_attribute, NamedAttribute, ParsableAttribute};
 
 // TODO: Might make sense to use smallvec here
 // TODO: Box<dyn> is working out well, but it'd be good to look at the enum approach again
@@ -110,10 +110,8 @@ impl AttributeMap {
 
 #[cfg(test)]
 mod tests {
-    use crate::attribute_types::{IceLite, Mid, NamedAttribute};
-
-    use super::AttributeMap;
-    use crate::GroupSemantics;
+    use crate::attributes::{GroupSemantics, IceLite, Mid, NamedAttribute};
+    use crate::AttributeMap;
 
     #[test]
     fn test_not_existing_known() {

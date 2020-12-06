@@ -10,10 +10,10 @@ use nom::sequence::{preceded, separated_pair, terminated, tuple};
 use semantic_sdp_derive::SdpEnum;
 
 pub use attribute_map::AttributeMap;
-pub use attribute_types::*;
+use attributes::{parse_attribute, ParsableAttribute};
 
 mod attribute_map;
-mod attribute_types;
+pub mod attributes;
 mod tests;
 
 pub enum EnumParseError {

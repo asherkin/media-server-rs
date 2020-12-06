@@ -105,12 +105,12 @@ fn sdp_enum_inner(ast: &DeriveInput) -> syn::Result<TokenStream> {
                 }
             }
         }
-        impl ::std::fmt::Display for #name #ty_generics #where_clause {
+        impl #impl_generics ::std::fmt::Display for #name #ty_generics #where_clause {
             fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
                 f.write_str(self.as_ref())
             }
         }
-        impl ::std::cmp::PartialEq for #name #ty_generics #where_clause {
+        impl #impl_generics ::std::cmp::PartialEq for #name #ty_generics #where_clause {
             fn eq(&self, other: &Self) -> bool {
                 self.as_ref() == other.as_ref()
             }

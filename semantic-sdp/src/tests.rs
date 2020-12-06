@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use super::*;
+use crate::attributes::{Group, GroupSemantics, IceLite};
 
 const SDP_OFFER: &str = include_str!("../resources/sdp-offer.txt");
 const SDP_ANSWER: &str = include_str!("../resources/sdp-answer.txt");

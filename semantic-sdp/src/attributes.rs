@@ -26,6 +26,7 @@ where
     let (input, attribute) = match name {
         IceUfrag::NAME => IceUfrag::parse_boxed(input),
         IceLite::NAME => IceLite::parse_boxed(input),
+        Setup::NAME => Setup::parse_boxed(input),
         Mid::NAME => Mid::parse_boxed(input),
         Group::NAME => Group::parse_boxed(input),
         _ => Option::<String>::parse_boxed(input),
@@ -101,11 +102,35 @@ macro_rules! impl_value_sdp_attribute {
         impl NamedAttribute for $type_name {
             const NAME: &'static str = $attribute_name;
         }
+
+        #[cfg(test)]
+        paste::paste! {
+            #[test]
+            fn [<parse_test_ $type_name:lower>]() {
+                // This test ensures that the attribute name has been added to
+                // the match in parse_attribute
+
+                type E<'a> = (&'a str, nom::error::ErrorKind);
+                let result = parse_attribute::<E>($attribute_name, "");
+
+                let attribute = match result {
+                    Ok((_, attribute)) => attribute,
+                    _ => return,
+                };
+
+                if let Some(_) = attribute.as_any().downcast_ref::<Option<String>>() {
+                    panic!("Attribute {} has not been included in parse_attribute match", stringify!($type_name));
+                }
+            }
+        }
     };
 }
 
-macro_rules! impl_property_sdp_attribute {
+macro_rules! declare_property_sdp_attribute {
     ($attribute_name:literal, $type_name:ident) => {
+        #[derive(Debug, Eq, PartialEq)]
+        pub struct $type_name;
+
         impl ParsableAttribute for $type_name {
             fn parse<'a, E>(input: &'a str) -> nom::IResult<&'a str, Self, E>
             where
@@ -123,70 +148,83 @@ macro_rules! impl_property_sdp_attribute {
             }
         }
 
-        impl NamedAttribute for $type_name {
-            const NAME: &'static str = $attribute_name;
-        }
+        impl_value_sdp_attribute!($attribute_name, $type_name);
     };
 }
 
-#[derive(Debug, Eq, PartialEq)]
-pub struct IceUfrag(pub String);
+macro_rules! declare_simple_value_sdp_attribute {
+    ($attribute_name:literal, $type_name:ident, String) => {
+        #[derive(Debug, Eq, PartialEq)]
+        pub struct $type_name(pub String);
 
-impl_value_sdp_attribute!("ice-ufrag", IceUfrag);
+        impl ParsableAttribute for $type_name {
+            fn parse<'a, E>(input: &'a str) -> nom::IResult<&'a str, Self, E>
+            where
+                E: ParseError<&'a str>
+                    + ContextError<&'a str>
+                    + FromExternalError<&'a str, crate::EnumParseError>
+                    + FromExternalError<&'a str, std::num::ParseIntError>,
+            {
+                let (input, _) = char(':')(input)?;
+                let (input, value) = not_line_ending(input)?;
+                let (input, _) = line_ending_or_eof(input)?;
+                Ok((input, Self(value.to_owned())))
+            }
 
-impl ParsableAttribute for IceUfrag {
-    fn parse<'a, E>(input: &'a str) -> nom::IResult<&'a str, Self, E>
-    where
-        E: ParseError<&'a str>
-            + ContextError<&'a str>
-            + FromExternalError<&'a str, crate::EnumParseError>
-            + FromExternalError<&'a str, std::num::ParseIntError>,
-    {
-        let (input, _) = char(':')(input)?;
-        let (input, value) = not_line_ending(input)?;
-        let (input, _) = line_ending_or_eof(input)?;
+            fn to_string(&self) -> Option<String> {
+                Some(self.0.to_string())
+            }
+        }
 
-        let ice_ufrag = IceUfrag(value.to_owned());
+        impl_value_sdp_attribute!($attribute_name, $type_name);
+    };
+    ($attribute_name:literal, $type_name:ident, $value_type:ident) => {
+        #[derive(Debug, Eq, PartialEq)]
+        pub struct $type_name(pub $value_type);
 
-        Ok((input, ice_ufrag))
-    }
+        impl ParsableAttribute for $type_name {
+            fn parse<'a, E>(input: &'a str) -> nom::IResult<&'a str, Self, E>
+            where
+                E: ParseError<&'a str>
+                    + ContextError<&'a str>
+                    + FromExternalError<&'a str, crate::EnumParseError>
+                    + FromExternalError<&'a str, std::num::ParseIntError>,
+            {
+                let (input, _) = char(':')(input)?;
+                let (input, value) = map_res(not_line_ending, $value_type::from_str)(input)?;
+                let (input, _) = line_ending_or_eof(input)?;
+                Ok((input, Self(value)))
+            }
 
-    fn to_string(&self) -> Option<String> {
-        Some(self.0.clone())
-    }
+            fn to_string(&self) -> Option<String> {
+                Some(self.0.to_string())
+            }
+        }
+
+        impl_value_sdp_attribute!($attribute_name, $type_name);
+    };
 }
 
-#[derive(Debug, Eq, PartialEq)]
-pub struct IceLite;
+declare_simple_value_sdp_attribute!("ice-ufrag", IceUfrag, String);
 
-impl_property_sdp_attribute!("ice-lite", IceLite);
+declare_property_sdp_attribute!("ice-lite", IceLite);
 
-#[derive(Debug, Eq, PartialEq)]
-pub struct Mid(pub String);
-
-impl_value_sdp_attribute!("mid", Mid);
-
-impl ParsableAttribute for Mid {
-    fn parse<'a, E>(input: &'a str) -> nom::IResult<&'a str, Self, E>
-    where
-        E: ParseError<&'a str>
-            + ContextError<&'a str>
-            + FromExternalError<&'a str, crate::EnumParseError>
-            + FromExternalError<&'a str, std::num::ParseIntError>,
-    {
-        let (input, _) = char(':')(input)?;
-        let (input, value) = not_line_ending(input)?;
-        let (input, _) = line_ending_or_eof(input)?;
-
-        let mid = Mid(value.to_owned());
-
-        Ok((input, mid))
-    }
-
-    fn to_string(&self) -> Option<String> {
-        Some(self.0.clone())
-    }
+#[non_exhaustive]
+#[derive(Debug, SdpEnum)]
+pub enum SetupRole {
+    #[sdp("active")]
+    Active,
+    #[sdp("passive")]
+    Passive,
+    #[sdp("actpass")]
+    ActivePassive,
+    #[sdp("holdconn")]
+    HoldConnection,
 }
+
+declare_simple_value_sdp_attribute!("setup", Setup, SetupRole);
+
+declare_simple_value_sdp_attribute!("mid", Mid, String);
 
 #[non_exhaustive]
 #[derive(Debug, SdpEnum)]
