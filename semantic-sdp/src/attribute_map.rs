@@ -4,11 +4,69 @@ use crate::attribute_types::{parse_attribute, NamedAttribute, ParsableAttribute}
 
 // TODO: Might make sense to use smallvec here
 // TODO: Box<dyn> is working out well, but it'd be good to look at the enum approach again
+// TODO: Switch to ordered-multimap for preserving total order
+//       indexmap isn't enough due to how the e.g. rtcp-fb attributes are ordered
 pub struct AttributeMap(HashMap<String, Vec<Box<dyn ParsableAttribute>>>);
 
 impl std::fmt::Debug for AttributeMap {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
+    }
+}
+
+impl std::fmt::Display for AttributeMap {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        for (name, attribute) in self {
+            write!(f, "a={}", name)?;
+            if let Some(value) = attribute.to_string() {
+                write!(f, ":{}", value)?;
+            }
+            write!(f, "\r\n")?;
+        }
+
+        Ok(())
+    }
+}
+
+pub struct Iter<'a> {
+    map: std::collections::hash_map::Iter<'a, String, Vec<Box<dyn ParsableAttribute>>>,
+    vec: Option<(&'a String, std::slice::Iter<'a, Box<dyn ParsableAttribute>>)>,
+}
+
+impl<'a> Iterator for Iter<'a> {
+    type Item = (&'a str, &'a Box<dyn ParsableAttribute>);
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if let Some((key, vec)) = &mut self.vec {
+                let item = vec.next();
+                if let Some(item) = item {
+                    return Some((key, item));
+                }
+            }
+
+            if let Some((key, vec)) = self.map.next() {
+                self.vec = Some((key, vec.iter()));
+
+                continue;
+            }
+
+            return None;
+        }
+    }
+}
+
+impl<'a> IntoIterator for &'a AttributeMap {
+    type Item = <Iter<'a> as Iterator>::Item;
+    type IntoIter = Iter<'a>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        Iter {
+            map: self.0.iter(),
+            vec: None,
+        }
     }
 }
 
@@ -24,7 +82,7 @@ impl AttributeMap {
             .push(Box::new(attribute));
     }
 
-    // This skips check that the value is the right type, so we only allow it for internal
+    // This skips checking that the value is the right type, so we only allow it for internal
     // use where we expect the Box to have come from parse_attribute
     pub(crate) fn insert_boxed(&mut self, name: &str, value: Box<dyn ParsableAttribute>) {
         self.0.entry(name.to_owned()).or_default().push(value);

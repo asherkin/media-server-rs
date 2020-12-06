@@ -36,139 +36,6 @@ pub struct Session {
     pub media_descriptions: Vec<MediaDescription>,
 }
 
-#[derive(Debug)]
-pub struct Origin {
-    pub username: Option<String>,
-    pub session_id: u64,
-    pub session_version: u64,
-    pub network_type: NetworkType,
-    pub address_type: AddressType,
-    pub unicast_address: String,
-}
-
-#[non_exhaustive]
-#[derive(Debug, SdpEnum)]
-pub enum NetworkType {
-    // RFC 4566
-    #[sdp("IN")]
-    Internet,
-}
-
-#[non_exhaustive]
-#[derive(Debug, SdpEnum)]
-pub enum AddressType {
-    // RFC 4566
-    #[sdp("IP4")]
-    Ip4,
-    #[sdp("IP6")]
-    Ip6,
-}
-
-// TODO: We don't currently parse the extra fields required for multicast addresses.
-//       From an API PoV, the multiple c-line stuff would cause friction for unicast usage.
-#[derive(Debug)]
-pub struct Connection {
-    pub network_type: NetworkType,
-    pub address_type: AddressType,
-    pub connection_address: String,
-    // pub multicast_ttl: Option<u8>,
-    // pub multicast_count: Option<u32>,
-}
-
-#[derive(Debug)]
-pub struct Bandwidth {
-    pub kind: BandwidthType,
-    pub bandwidth: u64,
-}
-
-#[non_exhaustive]
-#[derive(Debug, SdpEnum)]
-pub enum BandwidthType {
-    // RFC 4566
-    #[sdp("CT")]
-    ConferenceTotal,
-    #[sdp("AS")]
-    ApplicationSpecific,
-
-    #[sdp(default)]
-    Unknown(String),
-}
-
-#[derive(Debug)]
-pub struct Time {
-    pub start: u64,
-    pub stop: u64,
-    pub repeat_times: Vec<RepeatTime>,
-    // This is part of the time section in draft-ietf-mmusic-rfc4566bis-37
-    // We use a single Vec to represent the multiple entries in the z= line,
-    // this isn't multiple z= lines.
-    pub time_zone_adjustments: Vec<TimeZoneAdjustment>,
-}
-
-#[derive(Debug)]
-pub struct RepeatTime {
-    pub repeat_interval: u64,
-    pub active_duration: u64,
-    pub offsets: Vec<u64>,
-}
-
-#[derive(Debug)]
-pub struct TimeZoneAdjustment {
-    pub adjustment_time: u64,
-    pub offset: i64,
-}
-
-#[derive(Debug)]
-pub struct MediaDescription {
-    pub kind: MediaType,
-    pub port: u16,
-    pub num_ports: Option<u16>,
-    pub protocol: TransportProtocol,
-    pub formats: Vec<String>,
-
-    pub title: Option<String>,
-    // TODO: A media section can have multiple connection lines with multicast addresses,
-    //       We're just not supporting multicast currently.
-    pub connection: Option<Connection>,
-    pub bandwidths: Vec<Bandwidth>,
-    pub encryption_key: Option<String>,
-    pub attributes: AttributeMap,
-}
-
-#[non_exhaustive]
-#[derive(Debug, SdpEnum)]
-pub enum MediaType {
-    // RFC 4566
-    #[sdp("audio")]
-    Audio,
-    #[sdp("video")]
-    Video,
-    #[sdp("text")]
-    Text,
-    #[sdp("application")]
-    Application,
-    #[sdp("message")]
-    Message,
-
-    #[sdp(default)]
-    Unknown(String),
-}
-
-#[non_exhaustive]
-#[derive(Debug, SdpEnum)]
-pub enum TransportProtocol {
-    #[sdp("udp")]
-    Udp,
-    #[sdp("RTP/AVP")]
-    RtpAvp,
-    #[sdp("RTP/SAVP")]
-    RtpSavp,
-    #[sdp("UDP/TLS/RTP/SAVPF")]
-    UdpTlsRtpSavpf,
-    #[sdp(default)]
-    Unknown(String),
-}
-
 impl Session {
     fn parse<'a, E>(input: &'a str) -> Result<Self, nom::Err<E>>
     where
@@ -232,6 +99,311 @@ impl FromStr for Session {
             Err(nom::Err::Incomplete(_)) => unreachable!(),
         }
     }
+}
+
+impl std::fmt::Display for Session {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "v=0\r\n")?;
+
+        write!(f, "{}", self.origin)?;
+
+        write!(
+            f,
+            "s={}\r\n",
+            if let Some(name) = &self.name {
+                name
+            } else {
+                "-"
+            }
+        )?;
+
+        if let Some(information) = &self.information {
+            write!(f, "i={}\r\n", information)?;
+        }
+
+        if let Some(uri) = &self.uri {
+            write!(f, "u={}\r\n", uri)?;
+        }
+
+        if let Some(email_address) = &self.email_address {
+            write!(f, "e={}\r\n", email_address)?;
+        }
+
+        if let Some(phone_number) = &self.phone_number {
+            write!(f, "p={}\r\n", phone_number)?;
+        }
+
+        if let Some(connection) = &self.connection {
+            write!(f, "{}", connection)?;
+        }
+
+        for bandwidth in &self.bandwidths {
+            write!(f, "{}", bandwidth)?;
+        }
+
+        for time in &self.times {
+            write!(f, "{}", time)?;
+        }
+
+        if let Some(encryption_key) = &self.encryption_key {
+            write!(f, "k={}\r\n", encryption_key)?;
+        }
+
+        write!(f, "{}", self.attributes)?;
+
+        for media_description in &self.media_descriptions {
+            write!(f, "{}", media_description)?;
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct Origin {
+    pub username: Option<String>,
+    pub session_id: u64,
+    pub session_version: u64,
+    pub network_type: NetworkType,
+    pub address_type: AddressType,
+    pub unicast_address: String,
+}
+
+impl std::fmt::Display for Origin {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "o={} {} {} {} {} {}\r\n",
+            if let Some(username) = &self.username {
+                username
+            } else {
+                "-"
+            },
+            self.session_id,
+            self.session_version,
+            self.network_type,
+            self.address_type,
+            self.unicast_address,
+        )
+    }
+}
+
+#[non_exhaustive]
+#[derive(Debug, SdpEnum)]
+pub enum NetworkType {
+    // RFC 4566
+    #[sdp("IN")]
+    Internet,
+}
+
+#[non_exhaustive]
+#[derive(Debug, SdpEnum)]
+pub enum AddressType {
+    // RFC 4566
+    #[sdp("IP4")]
+    Ip4,
+    #[sdp("IP6")]
+    Ip6,
+}
+
+// TODO: We don't currently parse the extra fields required for multicast addresses.
+//       From an API PoV, the multiple c-line stuff would cause friction for unicast usage.
+#[derive(Debug)]
+pub struct Connection {
+    pub network_type: NetworkType,
+    pub address_type: AddressType,
+    pub connection_address: String,
+    // pub multicast_ttl: Option<u8>,
+    // pub multicast_count: Option<u32>,
+}
+
+impl std::fmt::Display for Connection {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "c={} {} {}\r\n",
+            self.network_type, self.address_type, self.connection_address,
+        )
+    }
+}
+
+#[derive(Debug)]
+pub struct Bandwidth {
+    pub kind: BandwidthType,
+    pub bandwidth: u64,
+}
+
+impl std::fmt::Display for Bandwidth {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "b={}:{}\r\n", self.kind, self.bandwidth,)
+    }
+}
+
+#[non_exhaustive]
+#[derive(Debug, SdpEnum)]
+pub enum BandwidthType {
+    // RFC 4566
+    #[sdp("CT")]
+    ConferenceTotal,
+    #[sdp("AS")]
+    ApplicationSpecific,
+
+    #[sdp(default)]
+    Unknown(String),
+}
+
+#[derive(Debug)]
+pub struct Time {
+    pub start: u64,
+    pub stop: u64,
+    pub repeat_times: Vec<RepeatTime>,
+    // This is part of the time section in draft-ietf-mmusic-rfc4566bis-37
+    // We use a single Vec to represent the multiple entries in the z= line,
+    // this isn't multiple z= lines.
+    pub time_zone_adjustments: Vec<TimeZoneAdjustment>,
+}
+
+impl std::fmt::Display for Time {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "t={} {}\r\n", self.start, self.stop)?;
+
+        for repeat_time in &self.repeat_times {
+            write!(f, "{}", repeat_time)?;
+        }
+
+        let mut iter = self.time_zone_adjustments.iter();
+        if let Some(time_zone_adjustment) = iter.next() {
+            write!(f, "z={}", time_zone_adjustment)?;
+            for time_zone_adjustment in iter {
+                write!(f, " {}", time_zone_adjustment)?;
+            }
+            write!(f, "\r\n")?;
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct RepeatTime {
+    pub repeat_interval: u64,
+    pub active_duration: u64,
+    pub offsets: Vec<u64>,
+}
+
+impl std::fmt::Display for RepeatTime {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "r={} {}", self.repeat_interval, self.active_duration)?;
+        for offset in &self.offsets {
+            write!(f, " {}", offset)?;
+        }
+        write!(f, "\r\n")?;
+
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct TimeZoneAdjustment {
+    pub adjustment_time: u64,
+    pub offset: i64,
+}
+
+impl std::fmt::Display for TimeZoneAdjustment {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{} {}", self.adjustment_time, self.offset)
+    }
+}
+
+#[derive(Debug)]
+pub struct MediaDescription {
+    pub kind: MediaType,
+    pub port: u16,
+    pub num_ports: Option<u16>,
+    pub protocol: TransportProtocol,
+    pub formats: Vec<String>,
+
+    pub title: Option<String>,
+    // TODO: A media section can have multiple connection lines with multicast addresses,
+    //       We're just not supporting multicast currently.
+    pub connection: Option<Connection>,
+    pub bandwidths: Vec<Bandwidth>,
+    pub encryption_key: Option<String>,
+    pub attributes: AttributeMap,
+}
+
+impl std::fmt::Display for MediaDescription {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let num_ports = if let Some(num_ports) = self.num_ports {
+            format!("/{}", num_ports)
+        } else {
+            "".to_owned()
+        };
+
+        write!(
+            f,
+            "m={} {}{} {} {}\r\n",
+            self.kind,
+            self.port,
+            num_ports,
+            self.protocol,
+            self.formats.join(" ")
+        )?;
+
+        if let Some(title) = &self.title {
+            write!(f, "i={}\r\n", title)?;
+        }
+
+        if let Some(connection) = &self.connection {
+            write!(f, "{}", connection)?;
+        }
+
+        for bandwidth in &self.bandwidths {
+            write!(f, "{}", bandwidth)?;
+        }
+
+        if let Some(encryption_key) = &self.encryption_key {
+            write!(f, "k={}\r\n", encryption_key)?;
+        }
+
+        write!(f, "{}", self.attributes)?;
+
+        Ok(())
+    }
+}
+
+#[non_exhaustive]
+#[derive(Debug, SdpEnum)]
+pub enum MediaType {
+    // RFC 4566
+    #[sdp("audio")]
+    Audio,
+    #[sdp("video")]
+    Video,
+    #[sdp("text")]
+    Text,
+    #[sdp("application")]
+    Application,
+    #[sdp("message")]
+    Message,
+
+    #[sdp(default)]
+    Unknown(String),
+}
+
+#[non_exhaustive]
+#[derive(Debug, SdpEnum)]
+pub enum TransportProtocol {
+    #[sdp("udp")]
+    Udp,
+    #[sdp("RTP/AVP")]
+    RtpAvp,
+    #[sdp("RTP/SAVP")]
+    RtpSavp,
+    #[sdp("UDP/TLS/RTP/SAVPF")]
+    UdpTlsRtpSavpf,
+    #[sdp(default)]
+    Unknown(String),
 }
 
 fn parse_origin_line<'a, E>(input: &'a str) -> nom::IResult<&'a str, Origin, E>

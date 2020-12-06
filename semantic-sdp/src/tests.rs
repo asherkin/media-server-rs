@@ -24,6 +24,13 @@ fn parse_offer() {
 }
 
 #[test]
+fn parse_and_serialize_offer() {
+    let parsed = Session::from_str(SDP_OFFER).unwrap();
+    let serialized = parsed.to_string();
+    assert_eq!(SDP_OFFER, serialized);
+}
+
+#[test]
 fn parse_answer() {
     let session = match Session::from_str(SDP_ANSWER) {
         Ok(session) => session,
@@ -36,4 +43,11 @@ fn parse_answer() {
     assert_eq!(session.name, Some("semantic-sdp".to_owned()));
 
     session.attributes.get::<IceLite>().unwrap();
+}
+
+#[test]
+fn parse_and_serialize_answer() {
+    let parsed = Session::from_str(SDP_ANSWER).unwrap();
+    let serialized = parsed.to_string();
+    assert_eq!(SDP_ANSWER, serialized);
 }
