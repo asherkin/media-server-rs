@@ -7,8 +7,7 @@ use nom::error::{ContextError, FromExternalError, ParseError};
 use nom::multi::many1;
 use nom::sequence::preceded;
 
-use semantic_sdp_derive::SdpEnum;
-
+use crate::enums::*;
 use crate::{field_separator, line_ending_or_eof, value_field};
 
 // TODO: Look into something like https://github.com/dtolnay/inventory
@@ -209,39 +208,9 @@ declare_simple_value_sdp_attribute!("ice-ufrag", IceUfrag, String);
 
 declare_property_sdp_attribute!("ice-lite", IceLite);
 
-#[non_exhaustive]
-#[derive(Debug, SdpEnum)]
-pub enum SetupRole {
-    #[sdp("active")]
-    Active,
-    #[sdp("passive")]
-    Passive,
-    #[sdp("actpass")]
-    ActivePassive,
-    #[sdp("holdconn")]
-    HoldConnection,
-}
-
 declare_simple_value_sdp_attribute!("setup", Setup, SetupRole);
 
 declare_simple_value_sdp_attribute!("mid", Mid, String);
-
-#[non_exhaustive]
-#[derive(Debug, SdpEnum)]
-pub enum GroupSemantics {
-    // RFC 5888
-    #[sdp("LS")]
-    LipSynchronization,
-    #[sdp("FID")]
-    FlowIdentification,
-
-    // draft-ietf-mmusic-sdp-bundle-negotiation
-    #[sdp("BUNDLE")]
-    Bundle,
-
-    #[sdp(default)]
-    Unknown(String),
-}
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct Group {

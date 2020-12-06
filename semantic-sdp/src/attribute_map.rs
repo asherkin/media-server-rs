@@ -110,7 +110,8 @@ impl AttributeMap {
 
 #[cfg(test)]
 mod tests {
-    use crate::attributes::{GroupSemantics, IceLite, Mid, NamedAttribute};
+    use crate::attributes::{IceLite, Mid, NamedAttribute};
+    use crate::enums::GroupSemantics;
     use crate::AttributeMap;
 
     #[test]
