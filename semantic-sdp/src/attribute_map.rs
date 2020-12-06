@@ -1,12 +1,10 @@
-use std::collections::HashMap;
+use ordered_multimap::ListOrderedMultimap;
 
 use crate::attribute_types::{parse_attribute, NamedAttribute, ParsableAttribute};
 
 // TODO: Might make sense to use smallvec here
 // TODO: Box<dyn> is working out well, but it'd be good to look at the enum approach again
-// TODO: Switch to ordered-multimap for preserving total order
-//       indexmap isn't enough due to how the e.g. rtcp-fb attributes are ordered
-pub struct AttributeMap(HashMap<String, Vec<Box<dyn ParsableAttribute>>>);
+pub struct AttributeMap(ListOrderedMultimap<String, Box<dyn ParsableAttribute>>);
 
 impl std::fmt::Debug for AttributeMap {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -28,68 +26,33 @@ impl std::fmt::Display for AttributeMap {
     }
 }
 
-pub struct Iter<'a> {
-    map: std::collections::hash_map::Iter<'a, String, Vec<Box<dyn ParsableAttribute>>>,
-    vec: Option<(&'a String, std::slice::Iter<'a, Box<dyn ParsableAttribute>>)>,
-}
-
-impl<'a> Iterator for Iter<'a> {
-    type Item = (&'a str, &'a Box<dyn ParsableAttribute>);
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            if let Some((key, vec)) = &mut self.vec {
-                let item = vec.next();
-                if let Some(item) = item {
-                    return Some((key, item));
-                }
-            }
-
-            if let Some((key, vec)) = self.map.next() {
-                self.vec = Some((key, vec.iter()));
-
-                continue;
-            }
-
-            return None;
-        }
-    }
-}
-
 impl<'a> IntoIterator for &'a AttributeMap {
-    type Item = <Iter<'a> as Iterator>::Item;
-    type IntoIter = Iter<'a>;
+    type Item = (&'a String, &'a Box<dyn ParsableAttribute>);
+    type IntoIter =
+        ordered_multimap::list_ordered_multimap::Iter<'a, String, Box<dyn ParsableAttribute>>;
 
-    #[inline]
     fn into_iter(self) -> Self::IntoIter {
-        Iter {
-            map: self.0.iter(),
-            vec: None,
-        }
+        self.0.iter()
     }
 }
 
 impl AttributeMap {
     pub fn new() -> Self {
-        Self(HashMap::new())
+        Self(ListOrderedMultimap::new())
     }
 
-    pub fn insert<T: NamedAttribute>(&mut self, attribute: T) {
-        self.0
-            .entry(T::NAME.to_owned())
-            .or_default()
-            .push(Box::new(attribute));
+    pub fn append<T: NamedAttribute>(&mut self, attribute: T) {
+        self.0.append(T::NAME.to_owned(), Box::new(attribute));
     }
 
     // This skips checking that the value is the right type, so we only allow it for internal
     // use where we expect the Box to have come from parse_attribute
-    pub(crate) fn insert_boxed(&mut self, name: &str, value: Box<dyn ParsableAttribute>) {
-        self.0.entry(name.to_owned()).or_default().push(value);
+    pub(crate) fn append_boxed(&mut self, name: &str, value: Box<dyn ParsableAttribute>) {
+        self.0.append(name.to_owned(), value);
     }
 
     // We just use String as the result type to avoid exposing the nom trait soup publicly
-    pub fn insert_unknown(&mut self, name: &str, value: Option<String>) -> Result<(), String> {
+    pub fn append_unknown(&mut self, name: &str, value: Option<String>) -> Result<(), String> {
         // This is quite gross, but we appear to need it for safety. We could bypass it
         // for actually unknown attributes, but that'd need another list of them. We
         // won't be using this function, it's just for extensibility, so don't worry
@@ -106,13 +69,12 @@ impl AttributeMap {
             nom::Err::Incomplete(_) => unreachable!(),
         })?;
 
-        self.0.entry(name.to_owned()).or_default().push(attribute);
+        self.append_boxed(name, attribute);
         Ok(())
     }
 
     pub fn get<T: NamedAttribute>(&self) -> Option<&T> {
-        self.0.get(T::NAME).and_then(|attributes| {
-            let attribute = attributes.iter().next()?;
+        self.0.get(T::NAME).and_then(|attribute| {
             let attribute = attribute.as_any();
             let attribute = attribute
                 .downcast_ref()
@@ -122,36 +84,27 @@ impl AttributeMap {
     }
 
     pub fn get_unknown(&self, name: &str) -> Option<Option<String>> {
-        self.0.get(name).and_then(|attributes| {
-            let attribute = attributes.iter().next()?;
-            Some(attribute.to_string())
-        })
+        self.0.get(name).map(|attribute| attribute.to_string())
     }
 
     pub fn get_vec<T: NamedAttribute>(&self) -> Vec<&T> {
-        match self.0.get(T::NAME) {
-            Some(attributes) => attributes
-                .iter()
-                .map(|attribute| {
-                    let attribute = attribute.as_any();
-                    let attribute = attribute
-                        .downcast_ref()
-                        .expect("wrong type found in attribute bucket");
-                    attribute
-                })
-                .collect::<Vec<_>>(),
-            None => Vec::new(),
-        }
+        self.0
+            .get_all(T::NAME)
+            .map(|attribute| {
+                let attribute = attribute.as_any();
+                let attribute = attribute
+                    .downcast_ref()
+                    .expect("wrong type found in attribute bucket");
+                attribute
+            })
+            .collect()
     }
 
     pub fn get_unknown_vec(&self, name: &str) -> Vec<Option<String>> {
-        match self.0.get(name) {
-            Some(attributes) => attributes
-                .iter()
-                .map(|attribute| attribute.to_string())
-                .collect::<Vec<_>>(),
-            None => Vec::new(),
-        }
+        self.0
+            .get_all(name)
+            .map(|attribute| attribute.to_string())
+            .collect()
     }
 }
 
@@ -177,21 +130,21 @@ mod tests {
     #[test]
     fn test_single_known() {
         let mut map = AttributeMap::new();
-        map.insert(Mid("test".to_owned()));
+        map.append(Mid("test".to_owned()));
         assert_eq!(map.get::<Mid>(), Some(&Mid("test".to_owned())));
     }
 
     #[test]
     fn test_single_unknown_property() {
         let mut map = AttributeMap::new();
-        map.insert_unknown("invalid", None).unwrap();
+        map.append_unknown("invalid", None).unwrap();
         assert_eq!(map.get_unknown("invalid"), Some(None));
     }
 
     #[test]
     fn test_single_unknown_value() {
         let mut map = AttributeMap::new();
-        map.insert_unknown("invalid", Some("value".to_owned()))
+        map.append_unknown("invalid", Some("value".to_owned()))
             .unwrap();
         assert_eq!(map.get_unknown("invalid"), Some(Some("value".to_owned())));
     }
@@ -199,8 +152,8 @@ mod tests {
     #[test]
     fn test_multiple_known() {
         let mut map = AttributeMap::new();
-        map.insert(Mid("test".to_owned()));
-        map.insert(Mid("test_two".to_owned()));
+        map.append(Mid("test".to_owned()));
+        map.append(Mid("test_two".to_owned()));
         assert_eq!(
             map.get_vec::<Mid>(),
             vec![&Mid("test".to_owned()), &Mid("test_two".to_owned())]
@@ -210,9 +163,9 @@ mod tests {
     #[test]
     fn test_multiple_unknown() {
         let mut map = AttributeMap::new();
-        map.insert_unknown("invalid", Some("value".to_owned()))
+        map.append_unknown("invalid", Some("value".to_owned()))
             .unwrap();
-        map.insert_unknown("invalid", Some("value_two".to_owned()))
+        map.append_unknown("invalid", Some("value_two".to_owned()))
             .unwrap();
         assert_eq!(
             map.get_unknown_vec("invalid"),
@@ -223,28 +176,28 @@ mod tests {
     #[test]
     fn test_known_to_unknown_property() {
         let mut map = AttributeMap::new();
-        map.insert(IceLite);
+        map.append(IceLite);
         assert_eq!(map.get_unknown(IceLite::NAME), Some(None));
     }
 
     #[test]
     fn test_known_to_unknown_value() {
         let mut map = AttributeMap::new();
-        map.insert(Mid("test".to_owned()));
+        map.append(Mid("test".to_owned()));
         assert_eq!(map.get_unknown(Mid::NAME), Some(Some("test".to_owned())));
     }
 
     #[test]
     fn test_unknown_to_known_property() {
         let mut map = AttributeMap::new();
-        map.insert_unknown(IceLite::NAME, None).unwrap();
+        map.append_unknown(IceLite::NAME, None).unwrap();
         assert_eq!(map.get::<IceLite>(), Some(&IceLite));
     }
 
     #[test]
     fn test_unknown_to_known_value() {
         let mut map = AttributeMap::new();
-        map.insert_unknown(Mid::NAME, Some("test".to_owned()))
+        map.append_unknown(Mid::NAME, Some("test".to_owned()))
             .unwrap();
         assert_eq!(map.get::<Mid>(), Some(&Mid("test".to_owned())));
     }

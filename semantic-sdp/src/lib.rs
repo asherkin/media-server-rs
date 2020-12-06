@@ -65,7 +65,7 @@ impl Session {
 
         let mut attributes = AttributeMap::new();
         for (name, attribute) in parsed_attributes {
-            attributes.insert_boxed(name, attribute);
+            attributes.append_boxed(name, attribute);
         }
 
         let session = Session {
@@ -611,7 +611,7 @@ where
 
     let mut attributes = AttributeMap::new();
     for (name, attribute) in parsed_attributes {
-        attributes.insert_boxed(name, attribute);
+        attributes.append_boxed(name, attribute);
     }
 
     let media_description = MediaDescription {

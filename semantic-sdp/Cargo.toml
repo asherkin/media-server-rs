@@ -6,4 +6,5 @@ edition = "2018"
 
 [dependencies]
 nom = "6"
+ordered-multimap = "0.3"
 semantic-sdp-derive = { version = "0.1", path = "semantic-sdp-derive" }
