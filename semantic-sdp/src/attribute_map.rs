@@ -47,12 +47,14 @@ impl AttributeMap {
 
     // This skips checking that the value is the right type, so we only allow it for internal
     // use where we expect the Box to have come from parse_attribute
-    pub(crate) fn append_boxed(&mut self, name: &str, value: Box<dyn ParsableAttribute>) {
-        self.0.append(name.to_owned(), value);
+    pub(crate) fn append_boxed(&mut self, name: String, value: Box<dyn ParsableAttribute>) {
+        self.0.append(name, value);
     }
 
     // We just use String as the result type to avoid exposing the nom trait soup publicly
     pub fn append_unknown(&mut self, name: &str, value: Option<String>) -> Result<(), String> {
+        let name = name.to_ascii_lowercase();
+
         // This is quite gross, but we appear to need it for safety. We could bypass it
         // for actually unknown attributes, but that'd need another list of them. We
         // won't be using this function, it's just for extensibility, so don't worry
@@ -62,7 +64,7 @@ impl AttributeMap {
             None => "".to_owned(),
         };
 
-        let (_, attribute) = parse_attribute(name, &value).map_err(|e| match e {
+        let (_, attribute) = parse_attribute(&name, &value).map_err(|e| match e {
             nom::Err::Error(e) | nom::Err::Failure(e) => {
                 nom::error::convert_error(value.as_str(), e)
             }
@@ -211,6 +213,26 @@ mod tests {
         assert_eq!(
             GroupSemantics::Unknown("BUNDLE".to_owned()),
             GroupSemantics::Bundle
+        );
+        assert_eq!(
+            GroupSemantics::Bundle,
+            GroupSemantics::Unknown("bundle".to_owned())
+        );
+        assert_eq!(
+            GroupSemantics::Unknown("bundle".to_owned()),
+            GroupSemantics::Bundle
+        );
+        assert_eq!(
+            GroupSemantics::Unknown("BUNDLE".to_owned()),
+            GroupSemantics::Unknown("BUNDLE".to_owned())
+        );
+        assert_eq!(
+            GroupSemantics::Unknown("bundle".to_owned()),
+            GroupSemantics::Unknown("BUNDLE".to_owned())
+        );
+        assert_eq!(
+            GroupSemantics::Unknown("BUNDLE".to_owned()),
+            GroupSemantics::Unknown("bundle".to_owned())
         );
     }
 }

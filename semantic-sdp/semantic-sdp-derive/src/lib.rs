@@ -54,6 +54,10 @@ fn sdp_enum_inner(ast: &DeriveInput) -> syn::Result<TokenStream> {
 
         let sdp_name = sdp_name.unwrap_or_else(|| ident.to_string());
 
+        // SDP attributes should always be ASCII-safe, if this is changed
+        // make sure to update the FromStr implementation below.
+        let sdp_name_lowercase = sdp_name.to_ascii_lowercase();
+
         // println!("{}::{} {:?} {:?}", name, ident, sdp_name, is_default);
 
         if is_default {
@@ -82,7 +86,7 @@ fn sdp_enum_inner(ast: &DeriveInput) -> syn::Result<TokenStream> {
             continue;
         }
 
-        from_str_arms.push(quote! { #sdp_name => ::std::result::Result::Ok(#name::#ident) });
+        from_str_arms.push(quote! { #sdp_name_lowercase => ::std::result::Result::Ok(#name::#ident) });
 
         as_ref_arms.push(quote! { #name::#ident => #sdp_name });
     }
@@ -93,7 +97,7 @@ fn sdp_enum_inner(ast: &DeriveInput) -> syn::Result<TokenStream> {
         impl #impl_generics ::std::str::FromStr for #name #ty_generics #where_clause {
             type Err = crate::EnumParseError;
             fn from_str(s: &str) -> ::std::result::Result< #name #ty_generics , Self::Err> {
-                match s {
+                match s.to_ascii_lowercase().as_str() {
                     #(#from_str_arms),*
                 }
             }
@@ -112,7 +116,7 @@ fn sdp_enum_inner(ast: &DeriveInput) -> syn::Result<TokenStream> {
         }
         impl #impl_generics ::std::cmp::PartialEq for #name #ty_generics #where_clause {
             fn eq(&self, other: &Self) -> bool {
-                self.as_ref() == other.as_ref()
+                self.as_ref().eq_ignore_ascii_case(other.as_ref())
             }
         }
         impl ::std::cmp::Eq for #name #ty_generics #where_clause {}

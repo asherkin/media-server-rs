@@ -498,7 +498,7 @@ where
 
 fn parse_attribute_line<'a, E>(
     input: &'a str,
-) -> nom::IResult<&'a str, (&'a str, Box<dyn ParsableAttribute>), E>
+) -> nom::IResult<&'a str, (String, Box<dyn ParsableAttribute>), E>
 where
     E: ParseError<&'a str>
         + ContextError<&'a str>
@@ -507,8 +507,8 @@ where
 {
     let (input, _) = char('a')(input)?;
     let (input, _) = char('=')(input)?;
-    let (input, name) = take_till1(|c| c == ':' || c == '\r' || c == '\n')(input)?;
-    let (input, attribute) = parse_attribute(name, input)?;
+    let (input, name) = map(take_till1(|c| c == ':' || c == '\r' || c == '\n'), str::to_ascii_lowercase)(input)?;
+    let (input, attribute) = parse_attribute(&name, input)?;
 
     Ok((input, (name, attribute)))
 }
