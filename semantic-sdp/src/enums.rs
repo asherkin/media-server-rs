@@ -58,8 +58,6 @@ pub enum TransportProtocol {
     Udp,
     #[sdp("RTP/AVP")]
     RtpAvp,
-    #[sdp("RTP/SAVP")]
-    RtpSavp,
 
     #[sdp("UDP/TLS/RTP/SAVPF")]
     UdpTlsRtpSavpf,
@@ -70,8 +68,52 @@ pub enum TransportProtocol {
 
 #[non_exhaustive]
 #[derive(Debug, SdpEnum)]
+pub enum IceTransportType {
+    // RFC 5245
+    #[sdp("UDP")]
+    Udp,
+
+    // RFC 6544
+    #[sdp("TCP")]
+    Tcp,
+
+    #[sdp(default)]
+    Unknown(String),
+}
+
+#[non_exhaustive]
+#[derive(Debug, SdpEnum)]
+pub enum IceCandidateType {
+    // RFC 5245
+    #[sdp("host")]
+    Host,
+    #[sdp("srflx")]
+    ServerReflexive,
+    #[sdp("prflx")]
+    PeerReflexive,
+    #[sdp("relay")]
+    Relayed,
+
+    #[sdp(default)]
+    Unknown(String),
+}
+
+#[non_exhaustive]
+#[derive(Debug, SdpEnum)]
+pub enum IceTcpType {
+    // RFC 6544
+    #[sdp("active")]
+    Active,
+    #[sdp("passive")]
+    Passive,
+    #[sdp("so")]
+    SimultaneousOpen,
+}
+
+#[non_exhaustive]
+#[derive(Debug, SdpEnum)]
 pub enum SetupRole {
-    // RFC 5763
+    // RFC 4145 / RFC 5763
     #[sdp("active")]
     Active,
     #[sdp("passive")]
@@ -80,6 +122,29 @@ pub enum SetupRole {
     ActivePassive,
     #[sdp("holdconn")]
     HoldConnection,
+}
+
+#[non_exhaustive]
+#[derive(Debug, SdpEnum)]
+pub enum FingerprintHashFunction {
+    // RFC 3279 / RFC 4572 / RFC 5763
+    #[sdp("sha-1")]
+    Sha1,
+    #[sdp("sha-224")]
+    Sha224,
+    #[sdp("sha-256")]
+    Sha256,
+    #[sdp("sha-384")]
+    Sha384,
+    #[sdp("sha-512")]
+    Sha512,
+    #[sdp("md5")]
+    Md5,
+    #[sdp("md2")]
+    Md2,
+
+    #[sdp(default)]
+    Unknown(String),
 }
 
 #[non_exhaustive]

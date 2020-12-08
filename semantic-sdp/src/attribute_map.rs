@@ -28,8 +28,7 @@ impl std::fmt::Display for AttributeMap {
 
 impl<'a> IntoIterator for &'a AttributeMap {
     type Item = (&'a String, &'a Box<dyn ParsableAttribute>);
-    type IntoIter =
-        ordered_multimap::list_ordered_multimap::Iter<'a, String, Box<dyn ParsableAttribute>>;
+    type IntoIter = ordered_multimap::list_ordered_multimap::Iter<'a, String, Box<dyn ParsableAttribute>>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.iter()
@@ -65,9 +64,7 @@ impl AttributeMap {
         };
 
         let (_, attribute) = parse_attribute(&name, &value).map_err(|e| match e {
-            nom::Err::Error(e) | nom::Err::Failure(e) => {
-                nom::error::convert_error(value.as_str(), e)
-            }
+            nom::Err::Error(e) | nom::Err::Failure(e) => nom::error::convert_error(value.as_str(), e),
             nom::Err::Incomplete(_) => unreachable!(),
         })?;
 
@@ -78,9 +75,7 @@ impl AttributeMap {
     pub fn get<T: NamedAttribute>(&self) -> Option<&T> {
         self.0.get(T::NAME).and_then(|attribute| {
             let attribute = attribute.as_any();
-            let attribute = attribute
-                .downcast_ref()
-                .expect("wrong type found in attribute bucket");
+            let attribute = attribute.downcast_ref().expect("wrong type found in attribute bucket");
             Some(attribute)
         })
     }
@@ -94,19 +89,14 @@ impl AttributeMap {
             .get_all(T::NAME)
             .map(|attribute| {
                 let attribute = attribute.as_any();
-                let attribute = attribute
-                    .downcast_ref()
-                    .expect("wrong type found in attribute bucket");
+                let attribute = attribute.downcast_ref().expect("wrong type found in attribute bucket");
                 attribute
             })
             .collect()
     }
 
     pub fn get_unknown_vec(&self, name: &str) -> Vec<Option<String>> {
-        self.0
-            .get_all(name)
-            .map(|attribute| attribute.to_string())
-            .collect()
+        self.0.get_all(name).map(|attribute| attribute.to_string()).collect()
     }
 }
 
@@ -145,8 +135,7 @@ mod tests {
     #[test]
     fn test_single_unknown_value() {
         let mut map = AttributeMap::new();
-        map.append_unknown("invalid", Some("value".to_owned()))
-            .unwrap();
+        map.append_unknown("invalid", Some("value".to_owned())).unwrap();
         assert_eq!(map.get_unknown("invalid"), Some(Some("value".to_owned())));
     }
 
@@ -164,10 +153,8 @@ mod tests {
     #[test]
     fn test_multiple_unknown() {
         let mut map = AttributeMap::new();
-        map.append_unknown("invalid", Some("value".to_owned()))
-            .unwrap();
-        map.append_unknown("invalid", Some("value_two".to_owned()))
-            .unwrap();
+        map.append_unknown("invalid", Some("value".to_owned())).unwrap();
+        map.append_unknown("invalid", Some("value_two".to_owned())).unwrap();
         assert_eq!(
             map.get_unknown_vec("invalid"),
             vec![Some("value".to_owned()), Some("value_two".to_owned())]
@@ -198,30 +185,17 @@ mod tests {
     #[test]
     fn test_unknown_to_known_value() {
         let mut map = AttributeMap::new();
-        map.append_unknown(Mid::NAME, Some("test".to_owned()))
-            .unwrap();
+        map.append_unknown(Mid::NAME, Some("test".to_owned())).unwrap();
         assert_eq!(map.get::<Mid>(), Some(&Mid("test".to_owned())));
     }
 
     #[test]
     fn enum_unknown_eq() {
         assert_eq!(GroupSemantics::Bundle, GroupSemantics::Bundle);
-        assert_eq!(
-            GroupSemantics::Bundle,
-            GroupSemantics::Unknown("BUNDLE".to_owned())
-        );
-        assert_eq!(
-            GroupSemantics::Unknown("BUNDLE".to_owned()),
-            GroupSemantics::Bundle
-        );
-        assert_eq!(
-            GroupSemantics::Bundle,
-            GroupSemantics::Unknown("bundle".to_owned())
-        );
-        assert_eq!(
-            GroupSemantics::Unknown("bundle".to_owned()),
-            GroupSemantics::Bundle
-        );
+        assert_eq!(GroupSemantics::Bundle, GroupSemantics::Unknown("BUNDLE".to_owned()));
+        assert_eq!(GroupSemantics::Unknown("BUNDLE".to_owned()), GroupSemantics::Bundle);
+        assert_eq!(GroupSemantics::Bundle, GroupSemantics::Unknown("bundle".to_owned()));
+        assert_eq!(GroupSemantics::Unknown("bundle".to_owned()), GroupSemantics::Bundle);
         assert_eq!(
             GroupSemantics::Unknown("BUNDLE".to_owned()),
             GroupSemantics::Unknown("BUNDLE".to_owned())

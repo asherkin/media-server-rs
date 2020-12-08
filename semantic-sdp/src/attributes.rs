@@ -1,21 +1,18 @@
 use std::any::Any;
+use std::collections::HashMap;
 use std::str::FromStr;
 
-use nom::character::complete::{char, not_line_ending};
+use nom::bytes::complete::tag_no_case;
+use nom::character::complete::{char, hex_digit1, not_line_ending};
 use nom::combinator::{map_res, opt};
 use nom::error::{ContextError, FromExternalError, ParseError};
-use nom::multi::many1;
-use nom::sequence::preceded;
+use nom::multi::{many0, many1, separated_list1};
+use nom::sequence::{preceded, separated_pair};
 
 use crate::enums::*;
 use crate::{field_separator, line_ending_or_eof, value_field};
 
-// TODO: Look into something like https://github.com/dtolnay/inventory
-//       It would be annoying to miss a type here
-pub(crate) fn parse_attribute<'a, E>(
-    name: &str,
-    input: &'a str,
-) -> nom::IResult<&'a str, Box<dyn ParsableAttribute>, E>
+pub(crate) fn parse_attribute<'a, E>(name: &str, input: &'a str) -> nom::IResult<&'a str, Box<dyn ParsableAttribute>, E>
 where
     E: ParseError<&'a str>
         + ContextError<&'a str>
@@ -23,11 +20,14 @@ where
         + FromExternalError<&'a str, std::num::ParseIntError>,
 {
     let (input, attribute) = match name {
-        IceUfrag::NAME => IceUfrag::parse_boxed(input),
-        IceLite::NAME => IceLite::parse_boxed(input),
-        Setup::NAME => Setup::parse_boxed(input),
-        Mid::NAME => Mid::parse_boxed(input),
+        Candidate::NAME => Candidate::parse_boxed(input),
+        Fingerprint::NAME => Fingerprint::parse_boxed(input),
         Group::NAME => Group::parse_boxed(input),
+        IceLite::NAME => IceLite::parse_boxed(input),
+        IcePwd::NAME => IcePwd::parse_boxed(input),
+        IceUfrag::NAME => IceUfrag::parse_boxed(input),
+        Mid::NAME => Mid::parse_boxed(input),
+        Setup::NAME => Setup::parse_boxed(input),
         _ => Option::<String>::parse_boxed(input),
     }?;
 
@@ -204,11 +204,179 @@ macro_rules! declare_simple_value_sdp_attribute {
     };
 }
 
-declare_simple_value_sdp_attribute!("ice-ufrag", IceUfrag, String);
+// RFC 5245
+#[derive(Debug, Eq, PartialEq)]
+struct Candidate {
+    // In practice the foundation is always an integer
+    foundation: String,
+    component: u16,
+    transport: IceTransportType,
+    priority: u32,
+    address: String,
+    port: u16,
+    kind: IceCandidateType,
+    rel_addr: Option<String>,
+    rel_port: Option<u16>,
+    unknown: HashMap<String, String>,
 
+    // RFC 6544
+    tcp_type: Option<IceTcpType>,
+}
+
+impl_value_sdp_attribute!("candidate", Candidate);
+
+impl ParsableAttribute for Candidate {
+    fn parse<'a, E>(input: &'a str) -> nom::IResult<&'a str, Self, E>
+    where
+        E: ParseError<&'a str>
+            + ContextError<&'a str>
+            + FromExternalError<&'a str, crate::EnumParseError>
+            + FromExternalError<&'a str, std::num::ParseIntError>,
+    {
+        let (input, _) = char(':')(input)?;
+        let (input, foundation) = value_field(input)?;
+        let (input, _) = field_separator(input)?;
+        let (input, component) = map_res(value_field, u16::from_str)(input)?;
+        let (input, _) = field_separator(input)?;
+        let (input, transport) = map_res(value_field, IceTransportType::from_str)(input)?;
+        let (input, _) = field_separator(input)?;
+        let (input, priority) = map_res(value_field, u32::from_str)(input)?;
+        let (input, _) = field_separator(input)?;
+        let (input, address) = value_field(input)?;
+        let (input, _) = field_separator(input)?;
+        let (input, port) = map_res(value_field, u16::from_str)(input)?;
+        let (input, kind) = preceded(tag_no_case(" typ "), map_res(value_field, IceCandidateType::from_str))(input)?;
+        let (input, rel_addr) = opt(preceded(tag_no_case(" raddr "), value_field))(input)?;
+        let (input, rel_port) = opt(preceded(tag_no_case(" rport "), map_res(value_field, u16::from_str)))(input)?;
+        let (input, unknown) = many0(preceded(
+            field_separator,
+            separated_pair(value_field, field_separator, value_field),
+        ))(input)?;
+        let (input, _) = line_ending_or_eof(input)?;
+
+        let mut unknown: HashMap<&str, &str> = unknown.into_iter().collect();
+
+        let tcp_type = unknown
+            .remove("tcptype")
+            .map(|v| match IceTcpType::from_str(v) {
+                Ok(v) => Ok(v),
+                Err(e) => Err(nom::Err::Error(E::from_external_error(
+                    v,
+                    nom::error::ErrorKind::MapRes,
+                    e,
+                ))),
+            })
+            .transpose()?;
+
+        let unknown: HashMap<String, String> = unknown
+            .into_iter()
+            .map(|(k, v)| (k.to_ascii_lowercase(), v.to_owned()))
+            .collect();
+
+        let candidate = Candidate {
+            foundation: foundation.to_owned(),
+            component,
+            transport,
+            priority,
+            address: address.to_owned(),
+            port,
+            kind,
+            rel_addr: rel_addr.map(|s| s.to_owned()),
+            rel_port,
+            unknown,
+            tcp_type,
+        };
+
+        Ok((input, candidate))
+    }
+
+    fn to_string(&self) -> Option<String> {
+        let mut named = vec![format!("typ {}", self.kind)];
+
+        if let Some(rel_addr) = &self.rel_addr {
+            named.push(format!("raddr {}", rel_addr));
+        }
+
+        if let Some(rel_port) = &self.rel_port {
+            named.push(format!("rport {}", rel_port));
+        }
+
+        if let Some(tcp_type) = &self.tcp_type {
+            named.push(format!("tcptype {}", tcp_type));
+        }
+
+        named.extend(self.unknown.iter().map(|(k, v)| format!("{} {}", k, v)));
+
+        let value = format!(
+            "{} {} {} {} {} {} {}",
+            self.foundation,
+            self.component,
+            self.transport,
+            self.priority,
+            self.address,
+            self.port,
+            named.join(" "),
+        );
+
+        Some(value)
+    }
+}
+
+// RFC 5245
 declare_property_sdp_attribute!("ice-lite", IceLite);
 
+// RFC 5245
+declare_simple_value_sdp_attribute!("ice-pwd", IcePwd, String);
+
+// RFC 5245
+declare_simple_value_sdp_attribute!("ice-ufrag", IceUfrag, String);
+
+// RFC 4145 / RFC 5763
 declare_simple_value_sdp_attribute!("setup", Setup, SetupRole);
+
+// RFC 4572 / RFC 5763
+#[derive(Debug, Eq, PartialEq)]
+struct Fingerprint {
+    hash_function: FingerprintHashFunction,
+    fingerprint: Vec<u8>,
+}
+
+impl_value_sdp_attribute!("fingerprint", Fingerprint);
+
+impl ParsableAttribute for Fingerprint {
+    fn parse<'a, E>(input: &'a str) -> nom::IResult<&'a str, Self, E>
+    where
+        E: ParseError<&'a str>
+            + ContextError<&'a str>
+            + FromExternalError<&'a str, crate::EnumParseError>
+            + FromExternalError<&'a str, std::num::ParseIntError>,
+    {
+        let (input, _) = char(':')(input)?;
+        let (input, hash_function) = map_res(value_field, FingerprintHashFunction::from_str)(input)?;
+        let (input, _) = field_separator(input)?;
+        let (input, fingerprint) =
+            separated_list1(char(':'), map_res(hex_digit1, |s| u8::from_str_radix(s, 16)))(input)?;
+        let (input, _) = line_ending_or_eof(input)?;
+
+        let fingerprint = Fingerprint {
+            hash_function,
+            fingerprint,
+        };
+
+        Ok((input, fingerprint))
+    }
+
+    fn to_string(&self) -> Option<String> {
+        let fingerprint = self
+            .fingerprint
+            .iter()
+            .map(|b| format!("{:02X}", b))
+            .collect::<Vec<_>>()
+            .join(":");
+
+        Some(format!("{} {}", self.hash_function, fingerprint))
+    }
+}
 
 declare_simple_value_sdp_attribute!("mid", Mid, String);
 

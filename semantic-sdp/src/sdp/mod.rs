@@ -88,9 +88,7 @@ impl FromStr for Session {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match Self::parse(s) {
             Ok(result) => Ok(result),
-            Err(nom::Err::Error(e)) | Err(nom::Err::Failure(e)) => {
-                Err(nom::error::convert_error(s, e))
-            }
+            Err(nom::Err::Error(e)) | Err(nom::Err::Failure(e)) => Err(nom::error::convert_error(s, e)),
             Err(nom::Err::Incomplete(_)) => unreachable!(),
         }
     }
@@ -102,15 +100,7 @@ impl std::fmt::Display for Session {
 
         write!(f, "{}", self.origin)?;
 
-        write!(
-            f,
-            "s={}\r\n",
-            if let Some(name) = &self.name {
-                name
-            } else {
-                "-"
-            }
-        )?;
+        write!(f, "s={}\r\n", if let Some(name) = &self.name { name } else { "-" })?;
 
         if let Some(information) = &self.information {
             write!(f, "i={}\r\n", information)?;
@@ -474,9 +464,7 @@ where
     Ok((input, repeat_time))
 }
 
-fn parse_time_zone_adjustment_line<'a, E>(
-    input: &'a str,
-) -> nom::IResult<&'a str, Vec<TimeZoneAdjustment>, E>
+fn parse_time_zone_adjustment_line<'a, E>(input: &'a str) -> nom::IResult<&'a str, Vec<TimeZoneAdjustment>, E>
 where
     E: ParseError<&'a str> + FromExternalError<&'a str, std::num::ParseIntError>,
 {
@@ -496,9 +484,7 @@ where
     Ok((input, adjustments))
 }
 
-fn parse_attribute_line<'a, E>(
-    input: &'a str,
-) -> nom::IResult<&'a str, (String, Box<dyn ParsableAttribute>), E>
+fn parse_attribute_line<'a, E>(input: &'a str) -> nom::IResult<&'a str, (String, Box<dyn ParsableAttribute>), E>
 where
     E: ParseError<&'a str>
         + ContextError<&'a str>
@@ -507,15 +493,16 @@ where
 {
     let (input, _) = char('a')(input)?;
     let (input, _) = char('=')(input)?;
-    let (input, name) = map(take_till1(|c| c == ':' || c == '\r' || c == '\n'), str::to_ascii_lowercase)(input)?;
+    let (input, name) = map(
+        take_till1(|c| c == ':' || c == '\r' || c == '\n'),
+        str::to_ascii_lowercase,
+    )(input)?;
     let (input, attribute) = parse_attribute(&name, input)?;
 
     Ok((input, (name, attribute)))
 }
 
-fn parse_media_description_lines<'a, E>(
-    input: &'a str,
-) -> nom::IResult<&'a str, MediaDescription, E>
+fn parse_media_description_lines<'a, E>(input: &'a str) -> nom::IResult<&'a str, MediaDescription, E>
 where
     E: ParseError<&'a str>
         + ContextError<&'a str>
@@ -576,9 +563,7 @@ where
 
 fn sdp_time_field<'a, O, E>(input: &'a str) -> nom::IResult<&'a str, O, E>
 where
-    O: std::ops::Mul<Output = O>
-        + std::convert::From<u32>
-        + std::str::FromStr<Err = std::num::ParseIntError>,
+    O: std::ops::Mul<Output = O> + std::convert::From<u32> + std::str::FromStr<Err = std::num::ParseIntError>,
     E: ParseError<&'a str> + FromExternalError<&'a str, std::num::ParseIntError>,
 {
     let (input, number) = map_res(recognize(tuple((opt(char('-')), digit1))), O::from_str)(input)?;
