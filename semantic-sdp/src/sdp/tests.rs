@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::collections::HashSet;
+
 use crate::attributes::{Group, IceLite};
 
 use super::*;
@@ -52,4 +54,40 @@ fn parse_and_serialize_answer() {
     let parsed = Session::from_str(SDP_ANSWER).unwrap();
     let serialized = parsed.to_string();
     assert_eq!(SDP_ANSWER, serialized);
+}
+
+#[test]
+fn unknown_attributes() {
+    fn get_unknown(attributes: &AttributeMap) -> HashSet<String> {
+        let mut unknown = HashSet::new();
+
+        for (name, attribute) in attributes {
+            let value: Option<&Option<String>> = attribute.as_any().downcast_ref();
+            if value.is_some() {
+                unknown.insert(name.to_owned());
+            }
+        }
+
+        unknown
+    }
+
+    fn get_unknown_sdp(sdp: &str) -> HashSet<String> {
+        let session = Session::from_str(sdp).unwrap();
+
+        let mut unknown = get_unknown(&session.attributes);
+
+        for media in &session.media_descriptions {
+            unknown.extend(get_unknown(&media.attributes));
+        }
+
+        unknown
+    }
+
+    let mut unknown = HashSet::new();
+    unknown.extend(get_unknown_sdp(SDP_OFFER));
+    unknown.extend(get_unknown_sdp(SDP_ANSWER));
+
+    println!("{:#?}", unknown);
+
+    assert_eq!(unknown.len(), 0);
 }

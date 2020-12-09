@@ -99,6 +99,17 @@ pub enum IceCandidateType {
 }
 
 #[non_exhaustive]
+#[derive(Debug, Hash, SdpEnum)]
+pub enum IceOption {
+    // draft-ietf-ice-trickle-21
+    #[sdp("trickle")]
+    Trickle,
+
+    #[sdp(default)]
+    Unknown(String),
+}
+
+#[non_exhaustive]
 #[derive(Debug, SdpEnum)]
 pub enum IceTcpType {
     // RFC 6544
@@ -162,4 +173,31 @@ pub enum GroupSemantics {
 
     #[sdp(default)]
     Unknown(String),
+}
+
+#[non_exhaustive]
+#[derive(Debug, SdpEnum)]
+pub enum SsrcGroupSemantics {
+    // RFC 5888 / RFC 5576
+    #[sdp("FID")]
+    FlowIdentification,
+    #[sdp("FEC")]
+    ForwardErrorCorrection,
+
+    #[sdp(default)]
+    Unknown(String),
+}
+
+#[non_exhaustive]
+#[derive(Debug, SdpEnum)]
+pub enum ExtensionMapDirection {
+    // RFC 8285
+    #[sdp("sendonly")]
+    SendOnly,
+    #[sdp("recvonly")]
+    ReceiveOnly,
+    #[sdp("sendrecv")]
+    SendReceive,
+    #[sdp("inactive")]
+    Inactive,
 }

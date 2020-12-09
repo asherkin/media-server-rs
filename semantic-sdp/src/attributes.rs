@@ -1,8 +1,8 @@
 use std::any::Any;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 
-use nom::bytes::complete::tag_no_case;
+use nom::bytes::complete::{tag_no_case, take_till1};
 use nom::character::complete::{char, hex_digit1, not_line_ending};
 use nom::combinator::{map_res, opt};
 use nom::error::{ContextError, FromExternalError, ParseError};
@@ -20,14 +20,34 @@ where
         + FromExternalError<&'a str, std::num::ParseIntError>,
 {
     let (input, attribute) = match name {
+        BundleOnly::NAME => BundleOnly::parse_boxed(input),
         Candidate::NAME => Candidate::parse_boxed(input),
+        ExtensionMap::NAME => ExtensionMap::parse_boxed(input),
+        ExtensionMapAllowMixed::NAME => ExtensionMapAllowMixed::parse_boxed(input),
         Fingerprint::NAME => Fingerprint::parse_boxed(input),
+        FormatParameters::NAME => FormatParameters::parse_boxed(input),
         Group::NAME => Group::parse_boxed(input),
         IceLite::NAME => IceLite::parse_boxed(input),
+        IceOptions::NAME => IceOptions::parse_boxed(input),
         IcePwd::NAME => IcePwd::parse_boxed(input),
         IceUfrag::NAME => IceUfrag::parse_boxed(input),
+        Inactive::NAME => Inactive::parse_boxed(input),
+        MaxPacketTime::NAME => MaxPacketTime::parse_boxed(input),
+        MediaStreamId::NAME => MediaStreamId::parse_boxed(input),
+        MediaStreamIdSemantic::NAME => MediaStreamIdSemantic::parse_boxed(input),
         Mid::NAME => Mid::parse_boxed(input),
+        PacketTime::NAME => PacketTime::parse_boxed(input),
+        ReceiveOnly::NAME => ReceiveOnly::parse_boxed(input),
+        Rtcp::NAME => Rtcp::parse_boxed(input),
+        RtcpFeedback::NAME => RtcpFeedback::parse_boxed(input),
+        RtcpMux::NAME => RtcpMux::parse_boxed(input),
+        RtcpReducedSize::NAME => RtcpReducedSize::parse_boxed(input),
+        RtpMap::NAME => RtpMap::parse_boxed(input),
+        SendOnly::NAME => SendOnly::parse_boxed(input),
+        SendReceive::NAME => SendReceive::parse_boxed(input),
         Setup::NAME => Setup::parse_boxed(input),
+        SsrcAttribute::NAME => SsrcAttribute::parse_boxed(input),
+        SsrcGroup::NAME => SsrcGroup::parse_boxed(input),
         _ => Option::<String>::parse_boxed(input),
     }?;
 
@@ -204,6 +224,103 @@ macro_rules! declare_simple_value_sdp_attribute {
     };
 }
 
+// RFC 4566
+declare_simple_value_sdp_attribute!("ptime", PacketTime, u32);
+declare_simple_value_sdp_attribute!("maxptime", MaxPacketTime, u32);
+
+// RFC 4566
+#[derive(Debug, Eq, PartialEq)]
+struct RtpMap {
+    payload: u8,
+    name: String,
+    clock: u32,
+    channels: Option<u8>,
+}
+
+impl_value_sdp_attribute!("rtpmap", RtpMap);
+
+impl ParsableAttribute for RtpMap {
+    fn parse<'a, E>(input: &'a str) -> nom::IResult<&'a str, Self, E>
+    where
+        E: ParseError<&'a str>
+            + ContextError<&'a str>
+            + FromExternalError<&'a str, crate::EnumParseError>
+            + FromExternalError<&'a str, std::num::ParseIntError>,
+    {
+        let (input, _) = char(':')(input)?;
+        let (input, payload) = map_res(value_field, u8::from_str)(input)?;
+        let (input, _) = field_separator(input)?;
+        let (input, name) = take_till1(|c| c == ' ' || c == '/')(input)?;
+        let (input, _) = char('/')(input)?;
+        let (input, clock) = map_res(
+            take_till1(|c| c == ' ' || c == '\r' || c == '\n' || c == '/'),
+            u32::from_str,
+        )(input)?;
+        let (input, channels) = opt(preceded(char('/'), map_res(value_field, u8::from_str)))(input)?;
+        let (input, _) = line_ending_or_eof(input)?;
+
+        let rtpmap = RtpMap {
+            payload,
+            name: name.to_owned(),
+            clock,
+            channels,
+        };
+
+        Ok((input, rtpmap))
+    }
+
+    fn to_string(&self) -> Option<String> {
+        let channels = match &self.channels {
+            Some(channels) => format!("/{}", channels),
+            None => "".to_owned(),
+        };
+
+        Some(format!("{} {}/{}{}", self.payload, self.name, self.clock, channels))
+    }
+}
+
+// RFC 4566
+#[derive(Debug, Eq, PartialEq)]
+struct FormatParameters {
+    payload: u8,
+    parameters: String,
+}
+
+impl_value_sdp_attribute!("fmtp", FormatParameters);
+
+impl ParsableAttribute for FormatParameters {
+    fn parse<'a, E>(input: &'a str) -> nom::IResult<&'a str, Self, E>
+    where
+        E: ParseError<&'a str>
+            + ContextError<&'a str>
+            + FromExternalError<&'a str, crate::EnumParseError>
+            + FromExternalError<&'a str, std::num::ParseIntError>,
+    {
+        let (input, _) = char(':')(input)?;
+        let (input, payload) = map_res(value_field, u8::from_str)(input)?;
+        let (input, _) = field_separator(input)?;
+        let (input, parameters) = not_line_ending(input)?;
+        let (input, _) = line_ending_or_eof(input)?;
+
+        let fmtp = FormatParameters {
+            payload,
+            parameters: parameters.to_owned(),
+        };
+
+        Ok((input, fmtp))
+    }
+
+    fn to_string(&self) -> Option<String> {
+        Some(format!("{} {}", self.payload, self.parameters))
+    }
+}
+
+// RFC 4566
+declare_property_sdp_attribute!("recvonly", ReceiveOnly);
+declare_property_sdp_attribute!("sendrecv", SendReceive);
+declare_property_sdp_attribute!("sendonly", SendOnly);
+declare_property_sdp_attribute!("inactive", Inactive);
+
 // RFC 5245
 #[derive(Debug, Eq, PartialEq)]
 struct Candidate {
@@ -331,6 +448,36 @@ declare_simple_value_sdp_attribute!("ice-pwd", IcePwd, String);
 // RFC 5245
 declare_simple_value_sdp_attribute!("ice-ufrag", IceUfrag, String);
 
+// RFC 5245
+#[derive(Debug, Eq, PartialEq)]
+struct IceOptions(HashSet<IceOption>);
+
+impl_value_sdp_attribute!("ice-options", IceOptions);
+
+impl ParsableAttribute for IceOptions {
+    fn parse<'a, E>(input: &'a str) -> nom::IResult<&'a str, Self, E>
+    where
+        E: ParseError<&'a str>
+            + ContextError<&'a str>
+            + FromExternalError<&'a str, crate::EnumParseError>
+            + FromExternalError<&'a str, std::num::ParseIntError>,
+    {
+        let (input, _) = char(':')(input)?;
+        let (input, options) = separated_list1(field_separator, map_res(value_field, IceOption::from_str))(input)?;
+        let (input, _) = line_ending_or_eof(input)?;
+
+        let options = options.into_iter().collect();
+
+        Ok((input, IceOptions(options)))
+    }
+
+    fn to_string(&self) -> Option<String> {
+        let options: Vec<_> = self.0.iter().map(|o| o.to_string()).collect();
+
+        Some(format!("{}", options.join(" ")))
+    }
+}
+
 // RFC 4145 / RFC 5763
 declare_simple_value_sdp_attribute!("setup", Setup, SetupRole);
 
@@ -378,8 +525,10 @@ impl ParsableAttribute for Fingerprint {
     }
 }
 
+// RFC 3388 / RFC 5888
 declare_simple_value_sdp_attribute!("mid", Mid, String);
 
+// RFC 3388 / RFC 5888
 #[derive(Debug, Eq, PartialEq)]
 pub struct Group {
     pub semantics: GroupSemantics,
@@ -411,5 +560,339 @@ impl ParsableAttribute for Group {
 
     fn to_string(&self) -> Option<String> {
         Some(format!("{} {}", self.semantics, self.mids.join(" ")))
+    }
+}
+
+// RFC 5576
+#[derive(Debug, Eq, PartialEq)]
+pub struct SsrcAttribute {
+    ssrc: u32,
+    name: String,
+    value: Option<String>,
+}
+
+impl_value_sdp_attribute!("ssrc", SsrcAttribute);
+
+impl ParsableAttribute for SsrcAttribute {
+    fn parse<'a, E>(input: &'a str) -> nom::IResult<&'a str, Self, E>
+    where
+        E: ParseError<&'a str>
+            + ContextError<&'a str>
+            + FromExternalError<&'a str, crate::EnumParseError>
+            + FromExternalError<&'a str, std::num::ParseIntError>,
+    {
+        let (input, _) = char(':')(input)?;
+        let (input, ssrc) = map_res(value_field, u32::from_str)(input)?;
+        let (input, _) = field_separator(input)?;
+        let (input, name) = take_till1(|c| c == ':')(input)?;
+        let (input, value) = opt(preceded(char(':'), not_line_ending))(input)?;
+        let (input, _) = line_ending_or_eof(input)?;
+
+        let ssrc_attribute = SsrcAttribute {
+            ssrc,
+            name: name.to_owned(),
+            value: value.map(|s| s.to_owned()),
+        };
+
+        Ok((input, ssrc_attribute))
+    }
+
+    fn to_string(&self) -> Option<String> {
+        let value = match &self.value {
+            Some(value) => format!(":{}", value),
+            None => "".to_owned(),
+        };
+
+        Some(format!("{} {}{}", self.ssrc, self.name, value))
+    }
+}
+
+// RFC 5576
+#[derive(Debug, Eq, PartialEq)]
+pub struct SsrcGroup {
+    pub semantics: SsrcGroupSemantics,
+    pub ssrcs: Vec<u32>,
+}
+
+impl_value_sdp_attribute!("ssrc-group", SsrcGroup);
+
+impl ParsableAttribute for SsrcGroup {
+    fn parse<'a, E>(input: &'a str) -> nom::IResult<&'a str, Self, E>
+    where
+        E: ParseError<&'a str>
+            + ContextError<&'a str>
+            + FromExternalError<&'a str, crate::EnumParseError>
+            + FromExternalError<&'a str, std::num::ParseIntError>,
+    {
+        let (input, _) = char(':')(input)?;
+        let (input, semantics) = map_res(value_field, SsrcGroupSemantics::from_str)(input)?;
+        let (input, ssrcs) = many1(preceded(field_separator, map_res(value_field, u32::from_str)))(input)?;
+        let (input, _) = line_ending_or_eof(input)?;
+
+        let ssrc_group = SsrcGroup { semantics, ssrcs };
+
+        Ok((input, ssrc_group))
+    }
+
+    fn to_string(&self) -> Option<String> {
+        let ssrcs: Vec<_> = self.ssrcs.iter().map(|s| s.to_string()).collect();
+
+        Some(format!("{} {}", self.semantics, ssrcs.join(" ")))
+    }
+}
+
+// RFC 3605
+#[derive(Debug, Eq, PartialEq)]
+pub struct Rtcp {
+    pub port: u16,
+    pub network_type: Option<NetworkType>,
+    pub address_type: Option<AddressType>,
+    pub connection_address: Option<String>,
+}
+
+impl_value_sdp_attribute!("rtcp", Rtcp);
+
+impl ParsableAttribute for Rtcp {
+    fn parse<'a, E>(input: &'a str) -> nom::IResult<&'a str, Self, E>
+    where
+        E: ParseError<&'a str>
+            + ContextError<&'a str>
+            + FromExternalError<&'a str, crate::EnumParseError>
+            + FromExternalError<&'a str, std::num::ParseIntError>,
+    {
+        let (input, _) = char(':')(input)?;
+        let (input, port) = map_res(value_field, u16::from_str)(input)?;
+        let (input, has_address) = opt(field_separator)(input)?;
+        let (input, network_type, address_type, connection_address) = if has_address.is_some() {
+            let (input, network_type) = map_res(value_field, NetworkType::from_str)(input)?;
+            let (input, _) = field_separator(input)?;
+            let (input, address_type) = map_res(value_field, AddressType::from_str)(input)?;
+            let (input, _) = field_separator(input)?;
+            let (input, connection_address) = value_field(input)?;
+            (input, Some(network_type), Some(address_type), Some(connection_address))
+        } else {
+            (input, None, None, None)
+        };
+        let (input, _) = line_ending_or_eof(input)?;
+
+        let rtcp = Rtcp {
+            port,
+            network_type,
+            address_type,
+            connection_address: connection_address.map(|s| s.to_owned()),
+        };
+
+        Ok((input, rtcp))
+    }
+
+    fn to_string(&self) -> Option<String> {
+        let address = if let Some(connection_address) = &self.connection_address {
+            let network_type = self.network_type.as_ref().unwrap();
+            let address_type = self.address_type.as_ref().unwrap();
+            format!(" {} {} {}", network_type, address_type, connection_address)
+        } else {
+            "".to_owned()
+        };
+
+        Some(format!("{}{}", self.port, address))
+    }
+}
+
+// RFC 4585
+#[derive(Debug, Eq, PartialEq)]
+pub struct RtcpFeedback {
+    // None is used for `*`
+    pub payload: Option<u8>,
+    // TODO: Do we want to define these further?
+    //       We probably do want some enums for all the various modes.
+    //       An enum with data could represent the id/param split quite nicely.
+    pub id: String,
+    pub param: Option<String>,
+}
+
+impl_value_sdp_attribute!("rtcp-fb", RtcpFeedback);
+
+impl ParsableAttribute for RtcpFeedback {
+    fn parse<'a, E>(input: &'a str) -> nom::IResult<&'a str, Self, E>
+    where
+        E: ParseError<&'a str>
+            + ContextError<&'a str>
+            + FromExternalError<&'a str, crate::EnumParseError>
+            + FromExternalError<&'a str, std::num::ParseIntError>,
+    {
+        let (input, _) = char(':')(input)?;
+        let (input, payload) = opt(map_res(value_field, u8::from_str))(input)?;
+        let (input, _) = opt(field_separator)(input)?;
+        let (input, id) = value_field(input)?;
+        let (input, param) = opt(preceded(field_separator, value_field))(input)?;
+        let (input, _) = line_ending_or_eof(input)?;
+
+        let rtcp_feedback = RtcpFeedback {
+            payload,
+            id: id.to_owned(),
+            param: param.map(|s| s.to_owned()),
+        };
+
+        Ok((input, rtcp_feedback))
+    }
+
+    fn to_string(&self) -> Option<String> {
+        let payload = match &self.payload {
+            Some(payload) => payload.to_string(),
+            None => "*".to_owned(),
+        };
+
+        let param = match &self.param {
+            Some(param) => format!(" {}", param),
+            None => "".to_owned(),
+        };
+
+        Some(format!("{} {}{}", payload, self.id, param))
+    }
+}
+
+// RFC 5506
+declare_property_sdp_attribute!("rtcp-rsize", RtcpReducedSize);
+
+// RFC 5761
+declare_property_sdp_attribute!("rtcp-mux", RtcpMux);
+
+// RFC 8285
+#[derive(Debug, Eq, PartialEq)]
+pub struct ExtensionMap {
+    pub id: u16,
+    pub direction: Option<ExtensionMapDirection>,
+    pub extension: String,
+    pub attributes: Vec<String>,
+}
+
+impl_value_sdp_attribute!("extmap", ExtensionMap);
+
+impl ParsableAttribute for ExtensionMap {
+    fn parse<'a, E>(input: &'a str) -> nom::IResult<&'a str, Self, E>
+    where
+        E: ParseError<&'a str>
+            + ContextError<&'a str>
+            + FromExternalError<&'a str, crate::EnumParseError>
+            + FromExternalError<&'a str, std::num::ParseIntError>,
+    {
+        let (input, _) = char(':')(input)?;
+        let (input, id) = map_res(take_till1(|c| c == ' ' || c == '/'), u16::from_str)(input)?;
+        let (input, direction) = opt(preceded(
+            char('/'),
+            map_res(value_field, ExtensionMapDirection::from_str),
+        ))(input)?;
+        let (input, _) = field_separator(input)?;
+        let (input, extension) = value_field(input)?;
+        let (input, attributes) = many0(preceded(field_separator, value_field))(input)?;
+        let (input, _) = line_ending_or_eof(input)?;
+
+        let extension_map = ExtensionMap {
+            id,
+            direction,
+            extension: extension.to_owned(),
+            attributes: attributes.into_iter().map(|s| s.to_owned()).collect(),
+        };
+
+        Ok((input, extension_map))
+    }
+
+    fn to_string(&self) -> Option<String> {
+        let direction = match &self.direction {
+            Some(direction) => format!("/{}", direction),
+            None => "".to_owned(),
+        };
+
+        let attributes = if !self.attributes.is_empty() {
+            format!(" {}", self.attributes.join(" "))
+        } else {
+            "".to_owned()
+        };
+
+        Some(format!("{}{} {}{}", self.id, direction, self.extension, attributes))
+    }
+}
+
+// RFC 8285
+declare_property_sdp_attribute!("extmap-allow-mixed", ExtensionMapAllowMixed);
+
+// draft-ietf-mmusic-sdp-bundle-negotiation
+declare_property_sdp_attribute!("bundle-only", BundleOnly);
+
+// draft-ietf-mmusic-msid
+#[derive(Debug, Eq, PartialEq)]
+pub struct MediaStreamId {
+    pub id: String,
+    pub appdata: Option<String>,
+}
+
+impl_value_sdp_attribute!("msid", MediaStreamId);
+
+impl ParsableAttribute for MediaStreamId {
+    fn parse<'a, E>(input: &'a str) -> nom::IResult<&'a str, Self, E>
+    where
+        E: ParseError<&'a str>
+            + ContextError<&'a str>
+            + FromExternalError<&'a str, crate::EnumParseError>
+            + FromExternalError<&'a str, std::num::ParseIntError>,
+    {
+        let (input, _) = char(':')(input)?;
+        let (input, id) = value_field(input)?;
+        let (input, appdata) = opt(preceded(field_separator, value_field))(input)?;
+        let (input, _) = line_ending_or_eof(input)?;
+
+        let msid = MediaStreamId {
+            id: id.to_owned(),
+            appdata: appdata.map(|s| s.to_owned()),
+        };
+
+        Ok((input, msid))
+    }
+
+    fn to_string(&self) -> Option<String> {
+        let appdata = match &self.appdata {
+            Some(appdata) => format!(" {}", appdata),
+            None => "".to_owned(),
+        };
+
+        Some(format!("{}{}", self.id, appdata))
+    }
+}
+
+// draft-ietf-mmusic-msid (removed in draft 09)
+#[derive(Debug, Eq, PartialEq)]
+pub struct MediaStreamIdSemantic {
+    // "WMS" is practically the only value for this.
+    pub semantic: String,
+    pub msids: Vec<String>,
+}
+
+impl_value_sdp_attribute!("msid-semantic", MediaStreamIdSemantic);
+
+impl ParsableAttribute for MediaStreamIdSemantic {
+    fn parse<'a, E>(input: &'a str) -> nom::IResult<&'a str, Self, E>
+    where
+        E: ParseError<&'a str>
+            + ContextError<&'a str>
+            + FromExternalError<&'a str, crate::EnumParseError>
+            + FromExternalError<&'a str, std::num::ParseIntError>,
+    {
+        let (input, _) = char(':')(input)?;
+        let (input, _) = opt(field_separator)(input)?;
+        let (input, semantic) = value_field(input)?;
+        let (input, msids) = many1(preceded(field_separator, value_field))(input)?;
+        let (input, _) = line_ending_or_eof(input)?;
+
+        let msid_semantic = MediaStreamIdSemantic {
+            semantic: semantic.to_owned(),
+            msids: msids.into_iter().map(|s| s.to_owned()).collect(),
+        };
+
+        Ok((input, msid_semantic))
+    }
+
+    fn to_string(&self) -> Option<String> {
+        // The extra space before the semantic seems to be expected by most implementations.
+        Some(format!(" {} {}", self.semantic, self.msids.join(" ")))
     }
 }
