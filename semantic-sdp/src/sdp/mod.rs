@@ -12,6 +12,7 @@ use crate::attributes::{parse_attribute, ParsableAttribute};
 use crate::enums::*;
 use crate::AttributeMap;
 use crate::{field_separator, field_separator_str, line_ending_or_eof, value_field};
+use std::collections::HashMap;
 
 mod tests;
 
@@ -24,7 +25,7 @@ pub struct Session {
     pub email_address: Option<String>,
     pub phone_number: Option<String>,
     pub connection: Option<Connection>,
-    pub bandwidths: Vec<Bandwidth>,
+    pub bandwidths: HashMap<BandwidthType, u64>,
     pub times: Vec<Time>,
     pub encryption_key: Option<String>,
     pub attributes: AttributeMap,
@@ -71,7 +72,7 @@ impl Session {
             email_address: email_address.map(|s| s.to_owned()),
             phone_number: phone_number.map(|s| s.to_owned()),
             connection,
-            bandwidths,
+            bandwidths: bandwidths.into_iter().collect(),
             times,
             encryption_key: encryption_key.map(|s| s.to_owned()),
             attributes,
@@ -122,8 +123,8 @@ impl std::fmt::Display for Session {
             write!(f, "{}", connection)?;
         }
 
-        for bandwidth in &self.bandwidths {
-            write!(f, "{}", bandwidth)?;
+        for (kind, bandwidth) in &self.bandwidths {
+            write!(f, "b={}:{}\r\n", kind, bandwidth)?;
         }
 
         for time in &self.times {
@@ -191,18 +192,6 @@ impl std::fmt::Display for Connection {
             "c={} {} {}\r\n",
             self.network_type, self.address_type, self.connection_address,
         )
-    }
-}
-
-#[derive(Debug)]
-pub struct Bandwidth {
-    pub kind: BandwidthType,
-    pub bandwidth: u64,
-}
-
-impl std::fmt::Display for Bandwidth {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "b={}:{}\r\n", self.kind, self.bandwidth,)
     }
 }
 
@@ -281,7 +270,7 @@ pub struct MediaDescription {
     // TODO: A media section can have multiple connection lines with multicast addresses,
     //       We're just not supporting multicast currently.
     pub connection: Option<Connection>,
-    pub bandwidths: Vec<Bandwidth>,
+    pub bandwidths: HashMap<BandwidthType, u64>,
     pub encryption_key: Option<String>,
     pub attributes: AttributeMap,
 }
@@ -312,8 +301,8 @@ impl std::fmt::Display for MediaDescription {
             write!(f, "{}", connection)?;
         }
 
-        for bandwidth in &self.bandwidths {
-            write!(f, "{}", bandwidth)?;
+        for (kind, bandwidth) in &self.bandwidths {
+            write!(f, "b={}:{}\r\n", kind, bandwidth)?;
         }
 
         if let Some(encryption_key) = &self.encryption_key {
@@ -398,7 +387,7 @@ where
     Ok((input, connection))
 }
 
-fn parse_bandwidth_line<'a, E>(input: &'a str) -> nom::IResult<&'a str, Bandwidth, E>
+fn parse_bandwidth_line<'a, E>(input: &'a str) -> nom::IResult<&'a str, (BandwidthType, u64), E>
 where
     E: ParseError<&'a str>
         + FromExternalError<&'a str, crate::EnumParseError>
@@ -414,9 +403,7 @@ where
     let (input, bandwidth) = map_res(value_field, u64::from_str)(input)?;
     let (input, _) = line_ending_or_eof(input)?;
 
-    let bandwidth = Bandwidth { kind, bandwidth };
-
-    Ok((input, bandwidth))
+    Ok((input, (kind, bandwidth)))
 }
 
 fn parse_time_lines<'a, E>(input: &'a str) -> nom::IResult<&'a str, Time, E>
@@ -539,7 +526,7 @@ where
         formats: formats.into_iter().map(|s| s.to_owned()).collect(),
         title: title.map(|s| s.to_owned()),
         connection,
-        bandwidths,
+        bandwidths: bandwidths.into_iter().collect(),
         encryption_key: encryption_key.map(|s| s.to_owned()),
         attributes,
     };
