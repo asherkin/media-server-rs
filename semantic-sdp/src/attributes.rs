@@ -22,6 +22,7 @@ where
     let (input, attribute) = match name {
         BundleOnly::NAME => BundleOnly::parse_boxed(input),
         Candidate::NAME => Candidate::parse_boxed(input),
+        EndOfCandidates::NAME => EndOfCandidates::parse_boxed(input),
         ExtensionMap::NAME => ExtensionMap::parse_boxed(input),
         ExtensionMapAllowMixed::NAME => ExtensionMapAllowMixed::parse_boxed(input),
         Fingerprint::NAME => Fingerprint::parse_boxed(input),
@@ -818,6 +819,9 @@ declare_property_sdp_attribute!("extmap-allow-mixed", ExtensionMapAllowMixed);
 
 // draft-ietf-mmusic-sdp-bundle-negotiation
 declare_property_sdp_attribute!("bundle-only", BundleOnly);
+
+// draft-ietf-mmusic-trickle-ice-sip
+declare_property_sdp_attribute!("end-of-candidates", EndOfCandidates);
 
 // draft-ietf-mmusic-msid
 #[derive(Debug, Clone, Eq, PartialEq)]

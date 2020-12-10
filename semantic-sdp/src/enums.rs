@@ -59,8 +59,37 @@ pub enum TransportProtocol {
     #[sdp("RTP/AVP")]
     RtpAvp,
 
+    // RFC 4585
+    #[sdp("RTP/AVPF")]
+    RtpAvpf,
+
+    // RFC 3711
+    #[sdp("RTP/SAVP")]
+    RtpSavp,
+
+    // RFC 5124
+    #[sdp("RTP/SAVPF")]
+    RtpSavpf,
+
+    // RFC 7850
+    #[sdp("TCP/TLS/RTP/SAVP")]
+    TcpTlsRtpSavp,
+    #[sdp("TCP/TLS/RTP/SAVPF")]
+    TcpTlsRtpSavpf,
+
+    // RFC 5764
+    #[sdp("UDP/TLS/RTP/SAVP")]
+    UdpTlsRtpSavp,
     #[sdp("UDP/TLS/RTP/SAVPF")]
     UdpTlsRtpSavpf,
+
+    //
+    #[sdp("UDP/DTLS/SCTP")]
+    UdpDtlsSctp,
+    #[sdp("TCP/DTLS/SCTP")]
+    TcpDtlsSctp,
+    #[sdp("DTLS/SCTP")]
+    DtlsSctp,
 
     #[sdp(default)]
     Unknown(String),
