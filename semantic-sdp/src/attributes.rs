@@ -147,7 +147,7 @@ macro_rules! impl_value_sdp_attribute {
 
 macro_rules! declare_property_sdp_attribute {
     ($attribute_name:literal, $type_name:ident) => {
-        #[derive(Debug, Eq, PartialEq)]
+        #[derive(Debug, Clone, Eq, PartialEq)]
         pub struct $type_name;
 
         impl ParsableAttribute for $type_name {
@@ -173,7 +173,7 @@ macro_rules! declare_property_sdp_attribute {
 
 macro_rules! declare_simple_value_sdp_attribute {
     ($attribute_name:literal, $type_name:ident, String) => {
-        #[derive(Debug, Eq, PartialEq)]
+        #[derive(Debug, Clone, Eq, PartialEq)]
         pub struct $type_name(pub String);
 
         impl ParsableAttribute for $type_name {
@@ -198,7 +198,7 @@ macro_rules! declare_simple_value_sdp_attribute {
         impl_value_sdp_attribute!($attribute_name, $type_name);
     };
     ($attribute_name:literal, $type_name:ident, $value_type:ident) => {
-        #[derive(Debug, Eq, PartialEq)]
+        #[derive(Debug, Clone, Eq, PartialEq)]
         pub struct $type_name(pub $value_type);
 
         impl ParsableAttribute for $type_name {
@@ -229,12 +229,12 @@ declare_simple_value_sdp_attribute!("ptime", PacketTime, u32);
 declare_simple_value_sdp_attribute!("maxptime", MaxPacketTime, u32);
 
 // RFC 4566
-#[derive(Debug, Eq, PartialEq)]
-struct RtpMap {
-    payload: u8,
-    name: String,
-    clock: u32,
-    channels: Option<u8>,
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct RtpMap {
+    pub payload: u8,
+    pub name: String,
+    pub clock: u32,
+    pub channels: Option<u8>,
 }
 
 impl_value_sdp_attribute!("rtpmap", RtpMap);
@@ -280,10 +280,10 @@ impl ParsableAttribute for RtpMap {
 }
 
 // RFC 4566
-#[derive(Debug, Eq, PartialEq)]
-struct FormatParameters {
-    payload: u8,
-    parameters: String,
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct FormatParameters {
+    pub payload: u8,
+    pub parameters: String,
 }
 
 impl_value_sdp_attribute!("fmtp", FormatParameters);
@@ -322,22 +322,22 @@ declare_property_sdp_attribute!("sendonly", SendOnly);
 declare_property_sdp_attribute!("inactive", Inactive);
 
 // RFC 5245
-#[derive(Debug, Eq, PartialEq)]
-struct Candidate {
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct Candidate {
     // In practice the foundation is always an integer
-    foundation: String,
-    component: u16,
-    transport: IceTransportType,
-    priority: u32,
-    address: String,
-    port: u16,
-    kind: IceCandidateType,
-    rel_addr: Option<String>,
-    rel_port: Option<u16>,
-    unknown: HashMap<String, String>,
+    pub foundation: String,
+    pub component: u16,
+    pub transport: IceTransportType,
+    pub priority: u32,
+    pub address: String,
+    pub port: u16,
+    pub kind: IceCandidateType,
+    pub rel_addr: Option<String>,
+    pub rel_port: Option<u16>,
+    pub unknown: HashMap<String, String>,
 
     // RFC 6544
-    tcp_type: Option<IceTcpType>,
+    pub tcp_type: Option<IceTcpType>,
 }
 
 impl_value_sdp_attribute!("candidate", Candidate);
@@ -449,8 +449,8 @@ declare_simple_value_sdp_attribute!("ice-pwd", IcePwd, String);
 declare_simple_value_sdp_attribute!("ice-ufrag", IceUfrag, String);
 
 // RFC 5245
-#[derive(Debug, Eq, PartialEq)]
-struct IceOptions(HashSet<IceOption>);
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct IceOptions(pub HashSet<IceOption>);
 
 impl_value_sdp_attribute!("ice-options", IceOptions);
 
@@ -482,10 +482,10 @@ impl ParsableAttribute for IceOptions {
 declare_simple_value_sdp_attribute!("setup", Setup, SetupRole);
 
 // RFC 4572 / RFC 5763
-#[derive(Debug, Eq, PartialEq)]
-struct Fingerprint {
-    hash_function: FingerprintHashFunction,
-    fingerprint: Vec<u8>,
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct Fingerprint {
+    pub hash_function: FingerprintHashFunction,
+    pub fingerprint: Vec<u8>,
 }
 
 impl_value_sdp_attribute!("fingerprint", Fingerprint);
@@ -529,7 +529,7 @@ impl ParsableAttribute for Fingerprint {
 declare_simple_value_sdp_attribute!("mid", Mid, String);
 
 // RFC 3388 / RFC 5888
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Group {
     pub semantics: GroupSemantics,
     pub mids: Vec<String>,
@@ -564,11 +564,11 @@ impl ParsableAttribute for Group {
 }
 
 // RFC 5576
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct SsrcAttribute {
-    ssrc: u32,
-    name: String,
-    value: Option<String>,
+    pub ssrc: u32,
+    pub name: String,
+    pub value: Option<String>,
 }
 
 impl_value_sdp_attribute!("ssrc", SsrcAttribute);
@@ -608,7 +608,7 @@ impl ParsableAttribute for SsrcAttribute {
 }
 
 // RFC 5576
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct SsrcGroup {
     pub semantics: SsrcGroupSemantics,
     pub ssrcs: Vec<u32>,
@@ -642,7 +642,7 @@ impl ParsableAttribute for SsrcGroup {
 }
 
 // RFC 3605
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Rtcp {
     pub port: u16,
     pub network_type: Option<NetworkType>,
@@ -699,7 +699,7 @@ impl ParsableAttribute for Rtcp {
 }
 
 // RFC 4585
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct RtcpFeedback {
     // None is used for `*`
     pub payload: Option<u8>,
@@ -758,7 +758,7 @@ declare_property_sdp_attribute!("rtcp-rsize", RtcpReducedSize);
 declare_property_sdp_attribute!("rtcp-mux", RtcpMux);
 
 // RFC 8285
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ExtensionMap {
     pub id: u16,
     pub direction: Option<ExtensionMapDirection>,
@@ -820,7 +820,7 @@ declare_property_sdp_attribute!("extmap-allow-mixed", ExtensionMapAllowMixed);
 declare_property_sdp_attribute!("bundle-only", BundleOnly);
 
 // draft-ietf-mmusic-msid
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct MediaStreamId {
     pub id: String,
     pub appdata: Option<String>,
@@ -860,7 +860,7 @@ impl ParsableAttribute for MediaStreamId {
 }
 
 // draft-ietf-mmusic-msid (removed in draft 09)
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct MediaStreamIdSemantic {
     // "WMS" is practically the only value for this.
     pub semantic: String,
