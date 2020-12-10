@@ -26,6 +26,12 @@ impl std::fmt::Display for AttributeMap {
     }
 }
 
+impl Default for AttributeMap {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<'a> IntoIterator for &'a AttributeMap {
     type Item = (&'a String, &'a Box<dyn ParsableAttribute>);
     type IntoIter = ordered_multimap::list_ordered_multimap::Iter<'a, String, Box<dyn ParsableAttribute>>;
@@ -73,10 +79,10 @@ impl AttributeMap {
     }
 
     pub fn get<T: NamedAttribute>(&self) -> Option<&T> {
-        self.0.get(T::NAME).and_then(|attribute| {
+        self.0.get(T::NAME).map(|attribute| {
             let attribute = attribute.as_any();
-            let attribute = attribute.downcast_ref().expect("wrong type found in attribute bucket");
-            Some(attribute)
+            let attribute = attribute.downcast_ref();
+            attribute.expect("wrong type found in attribute bucket")
         })
     }
 
@@ -103,7 +109,6 @@ impl AttributeMap {
 #[cfg(test)]
 mod tests {
     use crate::attributes::{IceLite, Mid, NamedAttribute};
-    use crate::enums::GroupSemantics;
     use crate::AttributeMap;
 
     #[test]
@@ -187,26 +192,5 @@ mod tests {
         let mut map = AttributeMap::new();
         map.append_unknown(Mid::NAME, Some("test".to_owned())).unwrap();
         assert_eq!(map.get::<Mid>(), Some(&Mid("test".to_owned())));
-    }
-
-    #[test]
-    fn enum_unknown_eq() {
-        assert_eq!(GroupSemantics::Bundle, GroupSemantics::Bundle);
-        assert_eq!(GroupSemantics::Bundle, GroupSemantics::Unknown("BUNDLE".to_owned()));
-        assert_eq!(GroupSemantics::Unknown("BUNDLE".to_owned()), GroupSemantics::Bundle);
-        assert_eq!(GroupSemantics::Bundle, GroupSemantics::Unknown("bundle".to_owned()));
-        assert_eq!(GroupSemantics::Unknown("bundle".to_owned()), GroupSemantics::Bundle);
-        assert_eq!(
-            GroupSemantics::Unknown("BUNDLE".to_owned()),
-            GroupSemantics::Unknown("BUNDLE".to_owned())
-        );
-        assert_eq!(
-            GroupSemantics::Unknown("bundle".to_owned()),
-            GroupSemantics::Unknown("BUNDLE".to_owned())
-        );
-        assert_eq!(
-            GroupSemantics::Unknown("BUNDLE".to_owned()),
-            GroupSemantics::Unknown("bundle".to_owned())
-        );
     }
 }

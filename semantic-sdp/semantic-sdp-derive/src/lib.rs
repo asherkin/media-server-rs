@@ -119,7 +119,12 @@ fn sdp_enum_inner(ast: &DeriveInput) -> syn::Result<TokenStream> {
                 self.as_ref().eq_ignore_ascii_case(other.as_ref())
             }
         }
-        impl ::std::cmp::Eq for #name #ty_generics #where_clause {}
+        impl #impl_generics ::std::cmp::Eq for #name #ty_generics #where_clause {}
+        impl #impl_generics ::std::hash::Hash for #name #ty_generics #where_clause {
+            fn hash<H: ::std::hash::Hasher>(&self, state: &mut H) {
+                self.as_ref().to_ascii_lowercase().hash(state)
+            }
+        }
     };
 
     Ok(tokens)

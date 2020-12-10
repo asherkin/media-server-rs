@@ -1,7 +1,7 @@
 use semantic_sdp_derive::SdpEnum;
 
 #[non_exhaustive]
-#[derive(Debug, Hash, Clone, SdpEnum)]
+#[derive(Debug, Clone, SdpEnum)]
 pub enum NetworkType {
     // RFC 4566
     #[sdp("IN")]
@@ -9,7 +9,7 @@ pub enum NetworkType {
 }
 
 #[non_exhaustive]
-#[derive(Debug, Hash, Clone, SdpEnum)]
+#[derive(Debug, Clone, SdpEnum)]
 pub enum AddressType {
     // RFC 4566
     #[sdp("IP4")]
@@ -19,7 +19,7 @@ pub enum AddressType {
 }
 
 #[non_exhaustive]
-#[derive(Debug, Hash, Clone, SdpEnum)]
+#[derive(Debug, Clone, SdpEnum)]
 pub enum BandwidthType {
     // RFC 4566
     #[sdp("CT")]
@@ -32,7 +32,7 @@ pub enum BandwidthType {
 }
 
 #[non_exhaustive]
-#[derive(Debug, Hash, Clone, SdpEnum)]
+#[derive(Debug, Clone, SdpEnum)]
 pub enum MediaType {
     // RFC 4566
     #[sdp("audio")]
@@ -51,7 +51,7 @@ pub enum MediaType {
 }
 
 #[non_exhaustive]
-#[derive(Debug, Hash, Clone, SdpEnum)]
+#[derive(Debug, Clone, SdpEnum)]
 pub enum TransportProtocol {
     // RFC 4566
     #[sdp("udp")]
@@ -96,7 +96,7 @@ pub enum TransportProtocol {
 }
 
 #[non_exhaustive]
-#[derive(Debug, Hash, Clone, SdpEnum)]
+#[derive(Debug, Clone, SdpEnum)]
 pub enum IceTransportType {
     // RFC 5245
     #[sdp("UDP")]
@@ -111,7 +111,7 @@ pub enum IceTransportType {
 }
 
 #[non_exhaustive]
-#[derive(Debug, Hash, Clone, SdpEnum)]
+#[derive(Debug, Clone, SdpEnum)]
 pub enum IceCandidateType {
     // RFC 5245
     #[sdp("host")]
@@ -128,7 +128,7 @@ pub enum IceCandidateType {
 }
 
 #[non_exhaustive]
-#[derive(Debug, Hash, Clone, SdpEnum)]
+#[derive(Debug, Clone, SdpEnum)]
 pub enum IceOption {
     // draft-ietf-ice-trickle-21
     #[sdp("trickle")]
@@ -139,7 +139,7 @@ pub enum IceOption {
 }
 
 #[non_exhaustive]
-#[derive(Debug, Hash, Clone, SdpEnum)]
+#[derive(Debug, Clone, SdpEnum)]
 pub enum IceTcpType {
     // RFC 6544
     #[sdp("active")]
@@ -151,7 +151,7 @@ pub enum IceTcpType {
 }
 
 #[non_exhaustive]
-#[derive(Debug, Hash, Clone, SdpEnum)]
+#[derive(Debug, Clone, SdpEnum)]
 pub enum SetupRole {
     // RFC 4145 / RFC 5763
     #[sdp("active")]
@@ -165,7 +165,7 @@ pub enum SetupRole {
 }
 
 #[non_exhaustive]
-#[derive(Debug, Hash, Clone, SdpEnum)]
+#[derive(Debug, Clone, SdpEnum)]
 pub enum FingerprintHashFunction {
     // RFC 3279 / RFC 4572 / RFC 5763
     #[sdp("sha-1")]
@@ -188,7 +188,7 @@ pub enum FingerprintHashFunction {
 }
 
 #[non_exhaustive]
-#[derive(Debug, Hash, Clone, SdpEnum)]
+#[derive(Debug, Clone, SdpEnum)]
 pub enum GroupSemantics {
     // RFC 5888
     #[sdp("LS")]
@@ -205,7 +205,7 @@ pub enum GroupSemantics {
 }
 
 #[non_exhaustive]
-#[derive(Debug, Hash, Clone, SdpEnum)]
+#[derive(Debug, Clone, SdpEnum)]
 pub enum SsrcGroupSemantics {
     // RFC 5888 / RFC 5576
     #[sdp("FID")]
@@ -218,7 +218,7 @@ pub enum SsrcGroupSemantics {
 }
 
 #[non_exhaustive]
-#[derive(Debug, Hash, Clone, SdpEnum)]
+#[derive(Debug, Clone, SdpEnum)]
 pub enum ExtensionMapDirection {
     // RFC 8285
     #[sdp("sendonly")]

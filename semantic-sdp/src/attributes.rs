@@ -475,7 +475,7 @@ impl ParsableAttribute for IceOptions {
     fn to_string(&self) -> Option<String> {
         let options: Vec<_> = self.0.iter().map(|o| o.to_string()).collect();
 
-        Some(format!("{}", options.join(" ")))
+        Some(options.join(" "))
     }
 }
 
