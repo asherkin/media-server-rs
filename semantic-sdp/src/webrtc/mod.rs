@@ -9,15 +9,24 @@ use ordered_multimap::ListOrderedMultimap;
 use rand::Rng;
 
 use crate::attributes::{
-    Candidate, EndOfCandidates, ExtensionMap, Fingerprint, Group, IceLite, IceOptions, IcePwd, IceUfrag, Setup,
+    Candidate, EndOfCandidates, ExtensionMap, Fingerprint, FormatParameters, Group, IceLite, IceOptions, IcePwd,
+    IceUfrag, Inactive, MaxPacketTime, Mid, PacketTime, ReceiveOnly, RtpMap, SendOnly, SendReceive, Setup,
 };
-use crate::enums::{BandwidthType, FingerprintHashFunction, IceOption, SetupRole};
+use crate::enums::{BandwidthType, FingerprintHashFunction, IceOption, MediaType, SetupRole, TransportProtocol};
 
 mod tests;
 
 // TODO: Consider adding a set of newtypes for the common ones we don't want mixed up,
-//       e.g. fingerprints, SSRCs, MIDs, RIDs
+//       e.g. fingerprints, SSRCs, MIDs, RIDs, RTP PTs
 
+// TODO: While higher level than the raw SDP, this is still quite low-level.
+//       We'd like this module to be quite a high-level interface, but maybe
+//       that needs to be built as yet another level of abstraction on top.
+// TODO: Alternatively, JS semantic-sdp clearly works quite well in the real
+//       world. We could ignore the spec behaviour here and use the parsing
+//       strategy from there - which is a lot simpler and has a nicer interface,
+//       at the cost of embedding non-spec assumptions about the SDP format
+//       and restricting the functionality supported.
 #[derive(Debug)]
 pub struct Session {
     pub id: u64,
@@ -134,8 +143,31 @@ impl std::fmt::Display for Session {
     }
 }
 
+#[derive(Debug, Eq, PartialEq)]
+pub enum MediaDirection {
+    SendOnly,
+    ReceiveOnly,
+    SendReceive,
+    Inactive,
+}
+
+// TODO: Include RTX/FEC as part of this rather than their own payloads?
+// TODO: If we ignore support for wildcard rtcp-fb attributes, we can include those here.
+#[derive(Debug)]
+pub struct RtpPayload {
+    pub name: String,
+    pub clock: u32,
+    pub channels: Option<u8>,
+    // TODO: Parse H264 profile info
+    pub parameters: Option<String>,
+}
+
 #[derive(Debug)]
 pub struct RtpMediaDescription {
+    pub kind: MediaType,
+    pub port: u16,
+    pub protocol: TransportProtocol,
+
     pub bandwidths: HashMap<BandwidthType, u64>,
 
     pub ice_ufrag: Option<String>,
@@ -148,10 +180,26 @@ pub struct RtpMediaDescription {
     pub fingerprints: ListOrderedMultimap<FingerprintHashFunction, Vec<u8>>,
     pub setup_role: Option<SetupRole>,
 
-    // packet types (fmts) from the m-line
-    // rtpmap, fmtp, ptime, maxptime
-    // which direction attribute, sendrecv if none
+    pub mid: Option<String>,
+
+    pub payloads: HashMap<u8, RtpPayload>,
+
+    pub packet_time: Option<u32>,
+    pub max_packet_time: Option<u32>,
+
+    pub direction: MediaDirection,
+
     // ssrc attributes
+
+    // TODO: Parse these at some level.
+    // pub ssrc_attributes: HashMap<u32, HashMap<String, Option<String>>>,
+
+    // ssrc-group seems to have been removed from JSEP?
+
+    // First SSRC of FID / FEC-FR is primary stream, 2nd is the RTX / FEC stream
+    // TODO: For those groups we want fast lookup by SSRC
+    //       Actually maybe there can only be one group per m-line?
+    // pub ssrc_groups: Vec<SsrcGroup>,
     pub extensions: Vec<ExtensionMap>,
     // rtcp-fb, rtcp-mux?, rtcp-mux-only?, rtcp-rsize?
     // msid, imageattr, rid, simulcast
@@ -179,9 +227,62 @@ impl RtpMediaDescription {
 
         let setup_role = sdp.attributes.get::<Setup>().map(|a| a.0.clone());
 
+        let mid = sdp.attributes.get::<Mid>().map(|a| a.0.clone());
+
+        let rtp_maps: HashMap<_, _> = sdp
+            .attributes
+            .get_vec::<RtpMap>()
+            .into_iter()
+            .map(|a| (a.payload, a))
+            .collect();
+
+        let format_parameters: HashMap<_, _> = sdp
+            .attributes
+            .get_vec::<FormatParameters>()
+            .into_iter()
+            .map(|a| (a.payload, a))
+            .collect();
+
+        let payloads: HashMap<_, _> = sdp
+            .formats
+            .iter()
+            .filter_map(|fmt| u8::from_str(fmt).ok())
+            .filter_map(|fmt| {
+                let map = rtp_maps.get(&fmt)?;
+                let parameters = format_parameters.get(&fmt);
+
+                let payload = RtpPayload {
+                    name: map.name.clone(),
+                    clock: map.clock,
+                    channels: map.channels,
+                    parameters: parameters.map(|p| p.parameters.clone()),
+                };
+
+                Some((fmt, payload))
+            })
+            .collect();
+
+        let packet_time = sdp.attributes.get::<PacketTime>().map(|a| a.0);
+        let max_packet_time = sdp.attributes.get::<MaxPacketTime>().map(|a| a.0);
+
+        let has_sendonly = sdp.attributes.get::<SendOnly>().is_some();
+        let has_recvonly = sdp.attributes.get::<ReceiveOnly>().is_some();
+        let has_sendrecv = sdp.attributes.get::<SendReceive>().is_some();
+        let has_inactive = sdp.attributes.get::<Inactive>().is_some();
+        let direction = match (has_sendonly, has_recvonly, has_sendrecv, has_inactive) {
+            (true, false, false, false) => MediaDirection::SendOnly,
+            (false, true, false, false) => MediaDirection::ReceiveOnly,
+            (false, false, _, false) => MediaDirection::SendReceive,
+            (false, false, false, true) => MediaDirection::Inactive,
+            _ => return Err("Multiple direction attributes found in m-line".to_owned()),
+        };
+
         let extensions = sdp.attributes.get_vec::<ExtensionMap>().into_iter().cloned().collect();
 
         let media_description = RtpMediaDescription {
+            kind: sdp.kind.clone(),
+            port: sdp.port,
+            protocol: sdp.protocol.clone(),
             bandwidths: sdp.bandwidths.clone(),
             ice_ufrag,
             ice_pwd,
@@ -190,6 +291,11 @@ impl RtpMediaDescription {
             candidates,
             fingerprints,
             setup_role,
+            mid,
+            payloads,
+            packet_time,
+            max_packet_time,
+            direction,
             extensions,
         };
 
