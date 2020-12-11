@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>media-server-rs</title>
+</head>
+<body>
+    <div style="width: fit-content; margin: 0 auto;">
+        <div style="width: 384px; height: 216px; background: black; margin: 1em 0;">
+            <video id="local-video" muted autoplay playsinline style="width: 100%; height: 100%;"></video>
+        </div>
+        <button id="start-button" type="button" style="width: 100%;">Start</button>
+    </div>
+
+    <script src="adapter.js"></script>
+    <script>
+        const localVideo = /** @type {HTMLVideoElement} */ document.getElementById("local-video");
+        const startButton = /** @type {HTMLButtonElement} */ document.getElementById("start-button");
+
+        /**
+         * @returns {Promise<WebSocket>}
+         */
+        function setupWebSocket() {
+            return new Promise((resolve, reject) => {
+                const url = `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}/ws`;
+                const webSocket = new WebSocket(url);
+
+                webSocket.addEventListener("open", () => {
+                    console.log("WebSocket opened");
+
+                    resolve(webSocket);
+                });
+
+                webSocket.addEventListener("error", (ev) => {
+                    reject(ev);
+                })
+
+                webSocket.addEventListener("close", () => {
+                    console.log("WebSocket closed");
+                });
+
+                webSocket.addEventListener("message", (ev) => {
+                    console.log("WebSocket message:", ev.data);
+                });
+            });
+        }
+
+        /**
+         * @param {WebSocket} webSocket
+         * @param {MediaStream} userMedia
+         * @returns {Promise<void>}
+         */
+        async function setupPeerConnection(webSocket, userMedia) {
+            const peerConnection = new RTCPeerConnection({
+                sdpSemantics: "unified-plan",
+                bundlePolicy: "max-bundle",
+                rtcpMuxPolicy: "require",
+            });
+
+            webSocket.addEventListener("message", (ev) => {
+                const message = JSON.parse(ev.data);
+
+                if (message.type === "xxx") {
+                    return;
+                }
+
+                console.warn("unknown message type:", message);
+            });
+
+            for (let track of userMedia.getTracks()) {
+                peerConnection.addTransceiver(track, {
+                    direction: "sendonly",
+                });
+            }
+
+            const offer = await peerConnection.createOffer();
+
+            console.log(offer.sdp);
+
+            webSocket.send(JSON.stringify(offer));
+        }
+
+        startButton.addEventListener("click", async () => {
+            startButton.disabled = true;
+
+            const userMediaPromise = navigator.mediaDevices.getUserMedia({
+                video: {
+                    width: 720,
+                },
+                audio: true,
+            }).then((userMedia) => {
+                localVideo.srcObject = userMedia;
+
+                return userMedia;
+            });
+
+            const [webSocket, userMedia] = await Promise.all([
+                setupWebSocket(),
+                userMediaPromise,
+            ]);
+
+            await setupPeerConnection(webSocket, userMedia);
+        });
+    </script>
+</body>
+</html>

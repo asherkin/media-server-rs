@@ -27,7 +27,7 @@ mod tests;
 //       strategy from there - which is a lot simpler and has a nicer interface,
 //       at the cost of embedding non-spec assumptions about the SDP format
 //       and restricting the functionality supported.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Session {
     pub id: u64,
     pub version: u64,
@@ -143,7 +143,7 @@ impl std::fmt::Display for Session {
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum MediaDirection {
     SendOnly,
     ReceiveOnly,
@@ -153,7 +153,7 @@ pub enum MediaDirection {
 
 // TODO: Include RTX/FEC as part of this rather than their own payloads?
 // TODO: If we ignore support for wildcard rtcp-fb attributes, we can include those here.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RtpPayload {
     pub name: String,
     pub clock: u32,
@@ -162,7 +162,7 @@ pub struct RtpPayload {
     pub parameters: Option<String>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RtpMediaDescription {
     pub kind: MediaType,
     pub port: u16,

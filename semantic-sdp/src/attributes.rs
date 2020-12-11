@@ -884,7 +884,7 @@ impl ParsableAttribute for MediaStreamIdSemantic {
         let (input, _) = char(':')(input)?;
         let (input, _) = opt(field_separator)(input)?;
         let (input, semantic) = value_field(input)?;
-        let (input, msids) = many1(preceded(field_separator, value_field))(input)?;
+        let (input, msids) = many0(preceded(field_separator, value_field))(input)?;
         let (input, _) = line_ending_or_eof(input)?;
 
         let msid_semantic = MediaStreamIdSemantic {
