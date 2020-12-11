@@ -20,8 +20,7 @@ fn sdp_enum_inner(ast: &DeriveInput) -> syn::Result<TokenStream> {
 
     let mut default_kw = None;
 
-    let mut from_str_default =
-        quote! { _ => ::std::result::Result::Err(crate::EnumParseError::VariantNotFound) };
+    let mut from_str_default = quote! { _ => ::std::result::Result::Err(crate::EnumParseError::VariantNotFound) };
 
     let mut from_str_arms = Vec::new();
     let mut as_ref_arms = Vec::new();
@@ -135,8 +134,7 @@ fn non_enum_error() -> syn::Error {
 }
 
 fn occurrence_error<T: ToTokens>(fst: T, snd: T, attr: &str) -> syn::Error {
-    let mut e =
-        syn::Error::new_spanned(snd, format!("Found multiple occurrences of sdp({})", attr));
+    let mut e = syn::Error::new_spanned(snd, format!("Found multiple occurrences of sdp({})", attr));
     e.combine(syn::Error::new_spanned(fst, "first one here"));
     e
 }

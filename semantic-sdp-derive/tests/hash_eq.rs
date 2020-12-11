@@ -50,10 +50,22 @@ fn enum_hash_eq() {
     }
 
     assert_eq!(h(GroupSemantics::Bundle), h(GroupSemantics::Bundle));
-    assert_eq!(h(GroupSemantics::Bundle), h(GroupSemantics::Unknown("BUNDLE".to_owned())));
-    assert_eq!(h(GroupSemantics::Unknown("BUNDLE".to_owned())), h(GroupSemantics::Bundle));
-    assert_eq!(h(GroupSemantics::Bundle), h(GroupSemantics::Unknown("bundle".to_owned())));
-    assert_eq!(h(GroupSemantics::Unknown("bundle".to_owned())), h(GroupSemantics::Bundle));
+    assert_eq!(
+        h(GroupSemantics::Bundle),
+        h(GroupSemantics::Unknown("BUNDLE".to_owned()))
+    );
+    assert_eq!(
+        h(GroupSemantics::Unknown("BUNDLE".to_owned())),
+        h(GroupSemantics::Bundle)
+    );
+    assert_eq!(
+        h(GroupSemantics::Bundle),
+        h(GroupSemantics::Unknown("bundle".to_owned()))
+    );
+    assert_eq!(
+        h(GroupSemantics::Unknown("bundle".to_owned())),
+        h(GroupSemantics::Bundle)
+    );
     assert_eq!(
         h(GroupSemantics::Unknown("BUNDLE".to_owned())),
         h(GroupSemantics::Unknown("BUNDLE".to_owned()))

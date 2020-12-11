@@ -1,21 +1,7 @@
-[package]
-name = "media-server"
-version = "0.1.0"
-authors = ["Asher Baker <asherkin@limetech.io>"]
-edition = "2018"
-links = "media-server"
-
-[dependencies]
-cxx = "1"
-openssl-sys = "0.9"
-parking_lot = "0.11"
-semantic-sdp = { version = "0.1", path = "semantic-sdp" }
-
-[dev-dependencies]
-futures = "0.3"
-futures-timer = "3"
-
-[build-dependencies]
-cc = { version = "1", features = ["parallel"] }
-cxx-build = "1"
-pkg-config = "0.3"
+[workspace]
+members = [
+    "media-server",
+    "media-server-sys",
+    "semantic-sdp",
+    "semantic-sdp-derive",
+]

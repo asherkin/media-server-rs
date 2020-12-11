@@ -25,11 +25,16 @@ mod ffi {
         type DtlsIceTransportListenerRustAdapter;
         fn on_ice_timeout(self: &mut DtlsIceTransportListenerRustAdapter);
         fn on_dtls_state_changed(self: &mut DtlsIceTransportListenerRustAdapter, state: DtlsIceTransportDtlsState);
-        fn on_remote_ice_candidate_activated(self: &mut DtlsIceTransportListenerRustAdapter, ip: &str, port: u16, priority: u32);
+        fn on_remote_ice_candidate_activated(
+            self: &mut DtlsIceTransportListenerRustAdapter,
+            ip: &str,
+            port: u16,
+            priority: u32,
+        );
     }
 
     unsafe extern "C++" {
-        include!("media-server/include/bridge.h");
+        include!("media-server-sys/include/bridge.h");
 
         type DtlsConnectionHash;
         type DtlsIceTransportDtlsState;
@@ -56,20 +61,25 @@ mod ffi {
         type RtpBundleTransportFacade;
         fn new_rtp_bundle_transport(port: u16) -> Result<UniquePtr<RtpBundleTransportFacade>>;
         fn get_local_port(self: &RtpBundleTransportFacade) -> u16;
-        fn add_ice_transport(self: &RtpBundleTransportFacade, username: &str, properties: &PropertiesFacade) -> Result<UniquePtr<RtpBundleTransportConnectionFacade>>;
+        fn add_ice_transport(
+            self: &RtpBundleTransportFacade,
+            username: &str,
+            properties: &PropertiesFacade,
+        ) -> Result<UniquePtr<RtpBundleTransportConnectionFacade>>;
     }
 }
 
+pub use cxx::UniquePtr;
 pub use ffi::*;
 
 impl std::fmt::Debug for DtlsIceTransportDtlsState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            &DtlsIceTransportDtlsState::New => f.write_str("New"),
-            &DtlsIceTransportDtlsState::Connecting => f.write_str("Connecting"),
-            &DtlsIceTransportDtlsState::Connected => f.write_str("Connected"),
-            &DtlsIceTransportDtlsState::Closed => f.write_str("Closed"),
-            &DtlsIceTransportDtlsState::Failed => f.write_str("Failed"),
+        match *self {
+            DtlsIceTransportDtlsState::New => f.write_str("New"),
+            DtlsIceTransportDtlsState::Connecting => f.write_str("Connecting"),
+            DtlsIceTransportDtlsState::Connected => f.write_str("Connected"),
+            DtlsIceTransportDtlsState::Closed => f.write_str("Closed"),
+            DtlsIceTransportDtlsState::Failed => f.write_str("Failed"),
             _ => f.write_str("Unknown"),
         }
     }
@@ -98,7 +108,10 @@ impl DtlsIceTransportListenerRustAdapter {
     }
 }
 
-impl<T> From<T> for DtlsIceTransportListenerRustAdapter where T: 'static + DtlsIceTransportListener {
+impl<T> From<T> for DtlsIceTransportListenerRustAdapter
+where
+    T: 'static + DtlsIceTransportListener,
+{
     fn from(listener: T) -> Self {
         Self(Box::new(listener))
     }

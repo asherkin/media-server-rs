@@ -1,4 +1,4 @@
 /.idea
 /target
-/cmake-build-*
+cmake-build-*/
 Cargo.lock

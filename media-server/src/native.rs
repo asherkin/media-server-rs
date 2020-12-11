@@ -1,7 +1,12 @@
-use crate::bridge;
+use media_server_sys as bridge;
+
+mod cxx {
+    pub use media_server_sys::UniquePtr;
+}
+
 use crate::Result;
 
-use parking_lot::{Mutex, const_mutex};
+use parking_lot::{const_mutex, Mutex};
 
 static INIT_MUTEX: Mutex<bool> = const_mutex(false);
 

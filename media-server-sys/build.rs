@@ -1,5 +1,5 @@
-use std::path::{PathBuf, Path};
 use std::fs;
+use std::path::{Path, PathBuf};
 
 // Copied from cxx_build (modified with canonicalize)
 fn symlink_file(original: impl AsRef<Path>, link: impl AsRef<Path>) -> std::io::Result<()> {
@@ -65,10 +65,54 @@ fn symlink_or_copy(original: impl AsRef<Path>, link: impl AsRef<Path>) -> std::i
 #[cfg(not(any(unix, windows)))]
 use fs::copy as symlink_or_copy;
 
+// Copied from cxx_build
+fn find_target_dir() -> PathBuf {
+    if let Some(target_dir) = std::env::var_os("CARGO_TARGET_DIR") {
+        let target_dir = PathBuf::from(target_dir);
+        if target_dir.is_absolute() {
+            return target_dir;
+        } else {
+            panic!("CARGO_TARGET_DIR path not found");
+        };
+    }
+
+    // fs::canonicalize on Windows produces UNC paths which cl.exe is unable to
+    // handle in includes.
+    // https://github.com/rust-lang/rust/issues/42869
+    // https://github.com/alexcrichton/cc-rs/issues/169
+    let mut also_try_canonical = cfg!(not(windows));
+
+    let out_dir = std::env::var_os("OUT_DIR")
+        .map(PathBuf::from)
+        .expect("OUT_DIR was not valid");
+
+    let mut dir = out_dir.to_owned();
+    loop {
+        if dir.join(".rustc_info.json").exists()
+            || dir.join("CACHEDIR.TAG").exists()
+            || dir.file_name() == Some(std::ffi::OsStr::new("target"))
+                && dir.parent().map_or(false, |parent| parent.join("Cargo.toml").exists())
+        {
+            return dir;
+        }
+        if dir.pop() {
+            continue;
+        }
+        if also_try_canonical {
+            if let Ok(canonical_dir) = out_dir.canonicalize() {
+                dir = canonical_dir;
+                also_try_canonical = false;
+                continue;
+            }
+        }
+        panic!("could not find target directory");
+    }
+}
+
 fn main() {
     let openssl = pkg_config::probe_library("openssl").unwrap();
     let openssl_include_paths: Vec<_> = openssl.include_paths.iter().map(PathBuf::as_path).collect();
-    
+
     let srtp_include_paths = vec![
         "media-server-node/external/srtp/config",
         "media-server-node/external/srtp/lib/include",
@@ -227,19 +271,22 @@ fn main() {
     // this directory for anything (according to the docs, just as a debugging aid), but by adding
     // it to a CMake include path we can get code completion on the C++ side.
     // TODO: This isn't very sane, but it greatly simplifies development.
-    // TODO: Respect CARGO_TARGET_DIR - ideally cxx_build would expose shared_dir.
-    symlink_file("include/bridge.h", "target/cxxbridge/media-server/include/bridge.h").unwrap();
+    symlink_file(
+        "include/bridge.h",
+        find_target_dir().join("cxxbridge/media-server-sys/include/bridge.h"),
+    )
+    .unwrap();
 
-    cxx_build::bridge("src/bridge/mod.rs")
+    cxx_build::bridge("src/lib.rs")
         .warnings(false)
         .flag_if_supported("-std=c++17")
         .flag_if_supported("-march=native")
-        .file("src/bridge/bridge.cc")
+        .file("src/bridge.cc")
         .includes(&openssl_include_paths)
         .includes(&media_server_include_paths)
-        .compile("media-server-bridge");
+        .compile("media-server-sys");
 
     println!("cargo:rerun-if-changed=include/bridge.h");
-    println!("cargo:rerun-if-changed=src/bridge/mod.rs");
-    println!("cargo:rerun-if-changed=src/bridge/bridge.cc");
+    println!("cargo:rerun-if-changed=src/lib.rs");
+    println!("cargo:rerun-if-changed=src/bridge.cc");
 }

@@ -1,5 +1,5 @@
-#include "media-server/include/bridge.h"
-#include "media-server/src/bridge/mod.rs.h"
+#include "media-server-sys/include/bridge.h"
+#include "media-server-sys/src/lib.rs.h"
 
 #include "OpenSSL.h"
 

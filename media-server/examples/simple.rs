@@ -5,12 +5,7 @@ use futures::future::Either;
 use futures_timer::Delay;
 
 use media_server::{
-    DtlsConnectionHash,
-    DtlsIceTransportDtlsState,
-    DtlsIceTransportListener,
-    Properties,
-    Result,
-    RtpBundleTransport,
+    DtlsConnectionHash, DtlsIceTransportDtlsState, DtlsIceTransportListener, Properties, Result, RtpBundleTransport,
     RtpBundleTransportConnection,
 };
 
@@ -33,7 +28,11 @@ struct TestTransport {
     receiver: oneshot::Receiver<()>,
 }
 
-fn create_test_transport(local_username: &str, remote_username: &str, remote_dtls_setup: &str) -> Result<TestTransport> {
+fn create_test_transport(
+    local_username: &str,
+    remote_username: &str,
+    remote_dtls_setup: &str,
+) -> Result<TestTransport> {
     let fingerprint = media_server::get_certificate_fingerprint(DtlsConnectionHash::Sha256)?;
 
     let transport = RtpBundleTransport::new(None)?;
@@ -55,7 +54,11 @@ fn create_test_transport(local_username: &str, remote_username: &str, remote_dtl
     let (sender, receiver) = oneshot::channel();
     connection.set_listener(WaitForConnectionListener(Some(sender)));
 
-    Ok(TestTransport { transport, connection, receiver })
+    Ok(TestTransport {
+        transport,
+        connection,
+        receiver,
+    })
 }
 
 fn main() -> Result<()> {
@@ -64,7 +67,8 @@ fn main() -> Result<()> {
     let one = create_test_transport("one", "two", "active")?;
     let two = create_test_transport("two", "one", "passive")?;
 
-    two.connection.add_remote_candidate("127.0.0.1", one.transport.get_local_port());
+    two.connection
+        .add_remote_candidate("127.0.0.1", one.transport.get_local_port());
 
     futures::executor::block_on(async {
         let connected = futures::future::try_join(one.receiver, two.receiver);

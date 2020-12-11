@@ -1,12 +1,35 @@
 #![cfg(test)]
 
 use super::*;
-use futures::future::Either;
 use futures::channel::oneshot;
+use futures::future::Either;
+use parking_lot::{const_mutex, Mutex};
+
+static INIT_MUTEX: Mutex<bool> = const_mutex(false);
+
+fn library_init() -> Result<(), Box<dyn std::error::Error>> {
+    let mut is_init = INIT_MUTEX.lock();
+
+    if *is_init {
+        return Ok(());
+    }
+
+    *is_init = true;
+
+    logger_enable_log(true);
+    logger_enable_debug(true);
+    logger_enable_ultra_debug(false);
+
+    openssl_class_init()?;
+
+    dtls_connection_initialize()?;
+
+    Ok(())
+}
 
 #[test]
 fn init() {
-    crate::library_init().unwrap();
+    library_init().unwrap();
 
     let fingerprint = dtls_connection_get_certificate_fingerprint(DtlsConnectionHash::SHA256).unwrap();
     println!("Fingerprint: {:?}", fingerprint);
@@ -14,7 +37,7 @@ fn init() {
 
 #[test]
 fn create_transport() {
-    crate::library_init().unwrap();
+    library_init().unwrap();
 
     let transport = new_rtp_bundle_transport(0).unwrap();
 
@@ -24,7 +47,7 @@ fn create_transport() {
 
 #[test]
 fn create_connection_failure() {
-    crate::library_init().unwrap();
+    library_init().unwrap();
 
     let transport = new_rtp_bundle_transport(0).unwrap();
 
@@ -36,7 +59,7 @@ fn create_connection_failure() {
 
 #[test]
 fn transport_connection() {
-    crate::library_init().unwrap();
+    library_init().unwrap();
 
     let fingerprint = dtls_connection_get_certificate_fingerprint(DtlsConnectionHash::SHA256).unwrap();
 
@@ -71,12 +94,17 @@ fn transport_connection() {
         }
 
         fn on_remote_ice_candidate_activated(&mut self, ip: &str, port: u16, priority: u32) {
-            println!("{}.on_remote_ice_candidate_activated(ip: {:?}, port: {:?}, priority: {:?})", self.0, ip, port, priority);
+            println!(
+                "{}.on_remote_ice_candidate_activated(ip: {:?}, port: {:?}, priority: {:?})",
+                self.0, ip, port, priority
+            );
         }
     }
 
     let (sender_one, receiver_one) = oneshot::channel();
-    let listener_one = Box::new(DtlsIceTransportListenerRustAdapter::from(LoggingDtlsIceTransportListener("one", Some(sender_one))));
+    let listener_one = Box::new(DtlsIceTransportListenerRustAdapter::from(
+        LoggingDtlsIceTransportListener("one", Some(sender_one)),
+    ));
     connection_one.set_listener(listener_one);
 
     let transport_two = new_rtp_bundle_transport(0).unwrap();
@@ -95,7 +123,9 @@ fn transport_connection() {
     let connection_two = transport_two.add_ice_transport("two:one", &properties_two).unwrap();
 
     let (sender_two, receiver_two) = oneshot::channel();
-    let listener_two = Box::new(DtlsIceTransportListenerRustAdapter::from(LoggingDtlsIceTransportListener("two", Some(sender_two))));
+    let listener_two = Box::new(DtlsIceTransportListenerRustAdapter::from(
+        LoggingDtlsIceTransportListener("two", Some(sender_two)),
+    ));
     connection_two.set_listener(listener_two);
 
     connection_two.add_remote_candidate("127.0.0.1", transport_one.get_local_port());

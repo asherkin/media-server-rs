@@ -8,7 +8,7 @@ edition = "2018"
 nom = "6"
 ordered-multimap = "0.3"
 rand = "0.7"
-semantic-sdp-derive = { version = "0.1", path = "semantic-sdp-derive" }
+semantic-sdp-derive = { version = "0.1", path = "../semantic-sdp-derive" }
 
 [dev-dependencies]
 paste = "1"

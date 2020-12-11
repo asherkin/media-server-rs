@@ -1,0 +1,14 @@
+[package]
+name = "media-server"
+version = "0.1.0"
+authors = ["Asher Baker <asherkin@limetech.io>"]
+edition = "2018"
+
+[dependencies]
+parking_lot = "0.11"
+media-server-sys = { version = "0.1", path = "../media-server-sys" }
+semantic-sdp = { version = "0.1", path = "../semantic-sdp" }
+
+[dev-dependencies]
+futures = "0.3"
+futures-timer = "3"

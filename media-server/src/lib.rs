@@ -1,4 +1,3 @@
-mod bridge;
 mod native;
 
 // TODO: Figure out an error handling strategy once we have more errors.
