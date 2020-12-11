@@ -38,6 +38,7 @@ impl Session {
         E: ParseError<&'a str>
             + ContextError<&'a str>
             + FromExternalError<&'a str, crate::EnumParseError>
+            + FromExternalError<&'a str, std::convert::Infallible>
             + FromExternalError<&'a str, std::num::ParseIntError>,
     {
         let (input, _) = char('v')(input)?;
@@ -319,6 +320,7 @@ fn parse_origin_line<'a, E>(input: &'a str) -> nom::IResult<&'a str, Origin, E>
 where
     E: ParseError<&'a str>
         + FromExternalError<&'a str, crate::EnumParseError>
+        + FromExternalError<&'a str, std::convert::Infallible>
         + FromExternalError<&'a str, std::num::ParseIntError>,
 {
     let (input, _) = char('o')(input)?;
@@ -367,7 +369,9 @@ where
 
 fn parse_connection_line<'a, E>(input: &'a str) -> nom::IResult<&'a str, Connection, E>
 where
-    E: ParseError<&'a str> + FromExternalError<&'a str, crate::EnumParseError>,
+    E: ParseError<&'a str>
+        + FromExternalError<&'a str, crate::EnumParseError>
+        + FromExternalError<&'a str, std::convert::Infallible>,
 {
     let (input, _) = char('c')(input)?;
     let (input, _) = char('=')(input)?;
@@ -391,6 +395,7 @@ fn parse_bandwidth_line<'a, E>(input: &'a str) -> nom::IResult<&'a str, (Bandwid
 where
     E: ParseError<&'a str>
         + FromExternalError<&'a str, crate::EnumParseError>
+        + FromExternalError<&'a str, std::convert::Infallible>
         + FromExternalError<&'a str, std::num::ParseIntError>,
 {
     let (input, _) = char('b')(input)?;
@@ -476,6 +481,7 @@ where
     E: ParseError<&'a str>
         + ContextError<&'a str>
         + FromExternalError<&'a str, crate::EnumParseError>
+        + FromExternalError<&'a str, std::convert::Infallible>
         + FromExternalError<&'a str, std::num::ParseIntError>,
 {
     let (input, _) = char('a')(input)?;
@@ -494,6 +500,7 @@ where
     E: ParseError<&'a str>
         + ContextError<&'a str>
         + FromExternalError<&'a str, crate::EnumParseError>
+        + FromExternalError<&'a str, std::convert::Infallible>
         + FromExternalError<&'a str, std::num::ParseIntError>,
 {
     let (input, _) = char('m')(input)?;

@@ -3,20 +3,22 @@ use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 
 use nom::bytes::complete::{tag_no_case, take_till1};
-use nom::character::complete::{char, hex_digit1, not_line_ending};
+use nom::character::complete::{char, not_line_ending};
 use nom::combinator::{map_res, opt};
 use nom::error::{ContextError, FromExternalError, ParseError};
 use nom::multi::{many0, many1, separated_list1};
 use nom::sequence::{preceded, separated_pair};
 
 use crate::enums::*;
-use crate::{field_separator, line_ending_or_eof, value_field};
+use crate::types::{CertificateFingerprint, PayloadType, Ssrc};
+use crate::{field_separator, line_ending_or_eof, types, value_field};
 
 pub(crate) fn parse_attribute<'a, E>(name: &str, input: &'a str) -> nom::IResult<&'a str, Box<dyn ParsableAttribute>, E>
 where
     E: ParseError<&'a str>
         + ContextError<&'a str>
         + FromExternalError<&'a str, crate::EnumParseError>
+        + FromExternalError<&'a str, std::convert::Infallible>
         + FromExternalError<&'a str, std::num::ParseIntError>,
 {
     let (input, attribute) = match name {
@@ -78,6 +80,7 @@ pub trait ParsableAttribute: BaseAttribute + std::fmt::Debug {
         E: ParseError<&'a str>
             + ContextError<&'a str>
             + FromExternalError<&'a str, crate::EnumParseError>
+            + FromExternalError<&'a str, std::convert::Infallible>
             + FromExternalError<&'a str, std::num::ParseIntError>;
     fn to_string(&self) -> Option<String>;
 
@@ -87,6 +90,7 @@ pub trait ParsableAttribute: BaseAttribute + std::fmt::Debug {
         E: ParseError<&'a str>
             + ContextError<&'a str>
             + FromExternalError<&'a str, crate::EnumParseError>
+            + FromExternalError<&'a str, std::convert::Infallible>
             + FromExternalError<&'a str, std::num::ParseIntError>,
     {
         let (input, attribute) = Self::parse(input)?;
@@ -101,6 +105,7 @@ impl ParsableAttribute for Option<String> {
         E: ParseError<&'a str>
             + ContextError<&'a str>
             + FromExternalError<&'a str, crate::EnumParseError>
+            + FromExternalError<&'a str, std::convert::Infallible>
             + FromExternalError<&'a str, std::num::ParseIntError>,
     {
         let (input, value) = opt(preceded(char(':'), not_line_ending))(input)?;
@@ -157,6 +162,7 @@ macro_rules! declare_property_sdp_attribute {
                 E: ParseError<&'a str>
                     + ContextError<&'a str>
                     + FromExternalError<&'a str, crate::EnumParseError>
+                    + FromExternalError<&'a str, std::convert::Infallible>
                     + FromExternalError<&'a str, std::num::ParseIntError>,
             {
                 let (input, _) = line_ending_or_eof(input)?;
@@ -173,32 +179,7 @@ macro_rules! declare_property_sdp_attribute {
 }
 
 macro_rules! declare_simple_value_sdp_attribute {
-    ($attribute_name:literal, $type_name:ident, String) => {
-        #[derive(Debug, Clone, Eq, PartialEq)]
-        pub struct $type_name(pub String);
-
-        impl ParsableAttribute for $type_name {
-            fn parse<'a, E>(input: &'a str) -> nom::IResult<&'a str, Self, E>
-            where
-                E: ParseError<&'a str>
-                    + ContextError<&'a str>
-                    + FromExternalError<&'a str, crate::EnumParseError>
-                    + FromExternalError<&'a str, std::num::ParseIntError>,
-            {
-                let (input, _) = char(':')(input)?;
-                let (input, value) = not_line_ending(input)?;
-                let (input, _) = line_ending_or_eof(input)?;
-                Ok((input, Self(value.to_owned())))
-            }
-
-            fn to_string(&self) -> Option<String> {
-                Some(self.0.to_string())
-            }
-        }
-
-        impl_value_sdp_attribute!($attribute_name, $type_name);
-    };
-    ($attribute_name:literal, $type_name:ident, $value_type:ident) => {
+    ($attribute_name:literal, $type_name:ident, $value_type:ty) => {
         #[derive(Debug, Clone, Eq, PartialEq)]
         pub struct $type_name(pub $value_type);
 
@@ -208,10 +189,11 @@ macro_rules! declare_simple_value_sdp_attribute {
                 E: ParseError<&'a str>
                     + ContextError<&'a str>
                     + FromExternalError<&'a str, crate::EnumParseError>
+                    + FromExternalError<&'a str, std::convert::Infallible>
                     + FromExternalError<&'a str, std::num::ParseIntError>,
             {
                 let (input, _) = char(':')(input)?;
-                let (input, value) = map_res(not_line_ending, $value_type::from_str)(input)?;
+                let (input, value) = map_res(not_line_ending, <$value_type>::from_str)(input)?;
                 let (input, _) = line_ending_or_eof(input)?;
                 Ok((input, Self(value)))
             }
@@ -232,7 +214,7 @@ declare_simple_value_sdp_attribute!("maxptime", MaxPacketTime, u32);
 // RFC 4566
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct RtpMap {
-    pub payload: u8,
+    pub payload: PayloadType,
     pub name: String,
     pub clock: u32,
     pub channels: Option<u8>,
@@ -246,10 +228,11 @@ impl ParsableAttribute for RtpMap {
         E: ParseError<&'a str>
             + ContextError<&'a str>
             + FromExternalError<&'a str, crate::EnumParseError>
+            + FromExternalError<&'a str, std::convert::Infallible>
             + FromExternalError<&'a str, std::num::ParseIntError>,
     {
         let (input, _) = char(':')(input)?;
-        let (input, payload) = map_res(value_field, u8::from_str)(input)?;
+        let (input, payload) = map_res(value_field, PayloadType::from_str)(input)?;
         let (input, _) = field_separator(input)?;
         let (input, name) = take_till1(|c| c == ' ' || c == '/')(input)?;
         let (input, _) = char('/')(input)?;
@@ -283,7 +266,7 @@ impl ParsableAttribute for RtpMap {
 // RFC 4566
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct FormatParameters {
-    pub payload: u8,
+    pub payload: PayloadType,
     pub parameters: String,
 }
 
@@ -295,10 +278,11 @@ impl ParsableAttribute for FormatParameters {
         E: ParseError<&'a str>
             + ContextError<&'a str>
             + FromExternalError<&'a str, crate::EnumParseError>
+            + FromExternalError<&'a str, std::convert::Infallible>
             + FromExternalError<&'a str, std::num::ParseIntError>,
     {
         let (input, _) = char(':')(input)?;
-        let (input, payload) = map_res(value_field, u8::from_str)(input)?;
+        let (input, payload) = map_res(value_field, PayloadType::from_str)(input)?;
         let (input, _) = field_separator(input)?;
         let (input, parameters) = not_line_ending(input)?;
         let (input, _) = line_ending_or_eof(input)?;
@@ -349,6 +333,7 @@ impl ParsableAttribute for Candidate {
         E: ParseError<&'a str>
             + ContextError<&'a str>
             + FromExternalError<&'a str, crate::EnumParseError>
+            + FromExternalError<&'a str, std::convert::Infallible>
             + FromExternalError<&'a str, std::num::ParseIntError>,
     {
         let (input, _) = char(':')(input)?;
@@ -461,6 +446,7 @@ impl ParsableAttribute for IceOptions {
         E: ParseError<&'a str>
             + ContextError<&'a str>
             + FromExternalError<&'a str, crate::EnumParseError>
+            + FromExternalError<&'a str, std::convert::Infallible>
             + FromExternalError<&'a str, std::num::ParseIntError>,
     {
         let (input, _) = char(':')(input)?;
@@ -486,7 +472,7 @@ declare_simple_value_sdp_attribute!("setup", Setup, SetupRole);
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Fingerprint {
     pub hash_function: FingerprintHashFunction,
-    pub fingerprint: Vec<u8>,
+    pub fingerprint: CertificateFingerprint,
 }
 
 impl_value_sdp_attribute!("fingerprint", Fingerprint);
@@ -497,13 +483,13 @@ impl ParsableAttribute for Fingerprint {
         E: ParseError<&'a str>
             + ContextError<&'a str>
             + FromExternalError<&'a str, crate::EnumParseError>
+            + FromExternalError<&'a str, std::convert::Infallible>
             + FromExternalError<&'a str, std::num::ParseIntError>,
     {
         let (input, _) = char(':')(input)?;
         let (input, hash_function) = map_res(value_field, FingerprintHashFunction::from_str)(input)?;
         let (input, _) = field_separator(input)?;
-        let (input, fingerprint) =
-            separated_list1(char(':'), map_res(hex_digit1, |s| u8::from_str_radix(s, 16)))(input)?;
+        let (input, fingerprint) = map_res(value_field, CertificateFingerprint::from_str)(input)?;
         let (input, _) = line_ending_or_eof(input)?;
 
         let fingerprint = Fingerprint {
@@ -515,25 +501,18 @@ impl ParsableAttribute for Fingerprint {
     }
 
     fn to_string(&self) -> Option<String> {
-        let fingerprint = self
-            .fingerprint
-            .iter()
-            .map(|b| format!("{:02X}", b))
-            .collect::<Vec<_>>()
-            .join(":");
-
-        Some(format!("{} {}", self.hash_function, fingerprint))
+        Some(format!("{} {}", self.hash_function, self.fingerprint))
     }
 }
 
 // RFC 3388 / RFC 5888
-declare_simple_value_sdp_attribute!("mid", Mid, String);
+declare_simple_value_sdp_attribute!("mid", Mid, types::Mid);
 
 // RFC 3388 / RFC 5888
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Group {
     pub semantics: GroupSemantics,
-    pub mids: Vec<String>,
+    pub mids: Vec<types::Mid>,
 }
 
 impl_value_sdp_attribute!("group", Group);
@@ -544,6 +523,7 @@ impl ParsableAttribute for Group {
         E: ParseError<&'a str>
             + ContextError<&'a str>
             + FromExternalError<&'a str, crate::EnumParseError>
+            + FromExternalError<&'a str, std::convert::Infallible>
             + FromExternalError<&'a str, std::num::ParseIntError>,
     {
         let (input, _) = char(':')(input)?;
@@ -553,7 +533,7 @@ impl ParsableAttribute for Group {
 
         let group = Group {
             semantics,
-            mids: mids.into_iter().map(|s| s.to_owned()).collect(),
+            mids: mids.into_iter().map(|s| types::Mid(s.to_owned())).collect(),
         };
 
         Ok((input, group))
@@ -567,7 +547,7 @@ impl ParsableAttribute for Group {
 // RFC 5576
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct SsrcAttribute {
-    pub ssrc: u32,
+    pub ssrc: Ssrc,
     pub name: String,
     pub value: Option<String>,
 }
@@ -580,10 +560,11 @@ impl ParsableAttribute for SsrcAttribute {
         E: ParseError<&'a str>
             + ContextError<&'a str>
             + FromExternalError<&'a str, crate::EnumParseError>
+            + FromExternalError<&'a str, std::convert::Infallible>
             + FromExternalError<&'a str, std::num::ParseIntError>,
     {
         let (input, _) = char(':')(input)?;
-        let (input, ssrc) = map_res(value_field, u32::from_str)(input)?;
+        let (input, ssrc) = map_res(value_field, Ssrc::from_str)(input)?;
         let (input, _) = field_separator(input)?;
         let (input, name) = take_till1(|c| c == ':')(input)?;
         let (input, value) = opt(preceded(char(':'), not_line_ending))(input)?;
@@ -612,7 +593,7 @@ impl ParsableAttribute for SsrcAttribute {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct SsrcGroup {
     pub semantics: SsrcGroupSemantics,
-    pub ssrcs: Vec<u32>,
+    pub ssrcs: Vec<Ssrc>,
 }
 
 impl_value_sdp_attribute!("ssrc-group", SsrcGroup);
@@ -623,11 +604,12 @@ impl ParsableAttribute for SsrcGroup {
         E: ParseError<&'a str>
             + ContextError<&'a str>
             + FromExternalError<&'a str, crate::EnumParseError>
+            + FromExternalError<&'a str, std::convert::Infallible>
             + FromExternalError<&'a str, std::num::ParseIntError>,
     {
         let (input, _) = char(':')(input)?;
         let (input, semantics) = map_res(value_field, SsrcGroupSemantics::from_str)(input)?;
-        let (input, ssrcs) = many1(preceded(field_separator, map_res(value_field, u32::from_str)))(input)?;
+        let (input, ssrcs) = many1(preceded(field_separator, map_res(value_field, Ssrc::from_str)))(input)?;
         let (input, _) = line_ending_or_eof(input)?;
 
         let ssrc_group = SsrcGroup { semantics, ssrcs };
@@ -659,6 +641,7 @@ impl ParsableAttribute for Rtcp {
         E: ParseError<&'a str>
             + ContextError<&'a str>
             + FromExternalError<&'a str, crate::EnumParseError>
+            + FromExternalError<&'a str, std::convert::Infallible>
             + FromExternalError<&'a str, std::num::ParseIntError>,
     {
         let (input, _) = char(':')(input)?;
@@ -703,7 +686,7 @@ impl ParsableAttribute for Rtcp {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct RtcpFeedback {
     // None is used for `*`
-    pub payload: Option<u8>,
+    pub payload: Option<PayloadType>,
     // TODO: Do we want to define these further?
     //       We probably do want some enums for all the various modes.
     //       An enum with data could represent the id/param split quite nicely.
@@ -719,10 +702,11 @@ impl ParsableAttribute for RtcpFeedback {
         E: ParseError<&'a str>
             + ContextError<&'a str>
             + FromExternalError<&'a str, crate::EnumParseError>
+            + FromExternalError<&'a str, std::convert::Infallible>
             + FromExternalError<&'a str, std::num::ParseIntError>,
     {
         let (input, _) = char(':')(input)?;
-        let (input, payload) = opt(map_res(value_field, u8::from_str))(input)?;
+        let (input, payload) = opt(map_res(value_field, PayloadType::from_str))(input)?;
         let (input, _) = opt(field_separator)(input)?;
         let (input, id) = value_field(input)?;
         let (input, param) = opt(preceded(field_separator, value_field))(input)?;
@@ -775,6 +759,7 @@ impl ParsableAttribute for ExtensionMap {
         E: ParseError<&'a str>
             + ContextError<&'a str>
             + FromExternalError<&'a str, crate::EnumParseError>
+            + FromExternalError<&'a str, std::convert::Infallible>
             + FromExternalError<&'a str, std::num::ParseIntError>,
     {
         let (input, _) = char(':')(input)?;
@@ -838,6 +823,7 @@ impl ParsableAttribute for MediaStreamId {
         E: ParseError<&'a str>
             + ContextError<&'a str>
             + FromExternalError<&'a str, crate::EnumParseError>
+            + FromExternalError<&'a str, std::convert::Infallible>
             + FromExternalError<&'a str, std::num::ParseIntError>,
     {
         let (input, _) = char(':')(input)?;
@@ -879,6 +865,7 @@ impl ParsableAttribute for MediaStreamIdSemantic {
         E: ParseError<&'a str>
             + ContextError<&'a str>
             + FromExternalError<&'a str, crate::EnumParseError>
+            + FromExternalError<&'a str, std::convert::Infallible>
             + FromExternalError<&'a str, std::num::ParseIntError>,
     {
         let (input, _) = char(':')(input)?;

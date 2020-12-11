@@ -13,11 +13,10 @@ use crate::attributes::{
     IceUfrag, Inactive, MaxPacketTime, Mid, PacketTime, ReceiveOnly, RtpMap, SendOnly, SendReceive, Setup,
 };
 use crate::enums::{BandwidthType, FingerprintHashFunction, IceOption, MediaType, SetupRole, TransportProtocol};
+use crate::types;
+use crate::types::{CertificateFingerprint, PayloadType};
 
 mod tests;
-
-// TODO: Consider adding a set of newtypes for the common ones we don't want mixed up,
-//       e.g. fingerprints, SSRCs, MIDs, RIDs, RTP PTs
 
 // TODO: While higher level than the raw SDP, this is still quite low-level.
 //       We'd like this module to be quite a high-level interface, but maybe
@@ -40,7 +39,7 @@ pub struct Session {
     pub ice_pwd: Option<String>,
     pub ice_options: HashSet<IceOption>,
 
-    pub fingerprints: ListOrderedMultimap<FingerprintHashFunction, Vec<u8>>,
+    pub fingerprints: ListOrderedMultimap<FingerprintHashFunction, CertificateFingerprint>,
     pub setup_role: Option<SetupRole>,
 
     pub extensions: Vec<ExtensionMap>,
@@ -177,12 +176,12 @@ pub struct RtpMediaDescription {
     pub has_end_of_candidates: bool,
     pub candidates: Vec<Candidate>,
 
-    pub fingerprints: ListOrderedMultimap<FingerprintHashFunction, Vec<u8>>,
+    pub fingerprints: ListOrderedMultimap<FingerprintHashFunction, CertificateFingerprint>,
     pub setup_role: Option<SetupRole>,
 
-    pub mid: Option<String>,
+    pub mid: Option<types::Mid>,
 
-    pub payloads: HashMap<u8, RtpPayload>,
+    pub payloads: HashMap<PayloadType, RtpPayload>,
 
     pub packet_time: Option<u32>,
     pub max_packet_time: Option<u32>,
@@ -246,7 +245,7 @@ impl RtpMediaDescription {
         let payloads: HashMap<_, _> = sdp
             .formats
             .iter()
-            .filter_map(|fmt| u8::from_str(fmt).ok())
+            .filter_map(|fmt| PayloadType::from_str(fmt).ok())
             .filter_map(|fmt| {
                 let map = rtp_maps.get(&fmt)?;
                 let parameters = format_parameters.get(&fmt);

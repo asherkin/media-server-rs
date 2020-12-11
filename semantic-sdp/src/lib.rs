@@ -10,6 +10,7 @@ mod attribute_map;
 pub mod attributes;
 pub mod enums;
 pub mod sdp;
+pub mod types;
 pub mod webrtc;
 
 pub enum EnumParseError {

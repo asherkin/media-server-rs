@@ -109,7 +109,7 @@ impl AttributeMap {
 #[cfg(test)]
 mod tests {
     use crate::attributes::{IceLite, Mid, NamedAttribute};
-    use crate::AttributeMap;
+    use crate::{types, AttributeMap};
 
     #[test]
     fn test_not_existing_known() {
@@ -126,8 +126,8 @@ mod tests {
     #[test]
     fn test_single_known() {
         let mut map = AttributeMap::new();
-        map.append(Mid("test".to_owned()));
-        assert_eq!(map.get::<Mid>(), Some(&Mid("test".to_owned())));
+        map.append(Mid("test".into()));
+        assert_eq!(map.get::<Mid>(), Some(&Mid("test".into())));
     }
 
     #[test]
@@ -147,12 +147,9 @@ mod tests {
     #[test]
     fn test_multiple_known() {
         let mut map = AttributeMap::new();
-        map.append(Mid("test".to_owned()));
-        map.append(Mid("test_two".to_owned()));
-        assert_eq!(
-            map.get_vec::<Mid>(),
-            vec![&Mid("test".to_owned()), &Mid("test_two".to_owned())]
-        );
+        map.append(Mid("test".into()));
+        map.append(Mid("test_two".into()));
+        assert_eq!(map.get_vec::<Mid>(), vec![&Mid("test".into()), &Mid("test_two".into())]);
     }
 
     #[test]
@@ -176,7 +173,7 @@ mod tests {
     #[test]
     fn test_known_to_unknown_value() {
         let mut map = AttributeMap::new();
-        map.append(Mid("test".to_owned()));
+        map.append(Mid("test".into()));
         assert_eq!(map.get_unknown(Mid::NAME), Some(Some("test".to_owned())));
     }
 
@@ -191,6 +188,6 @@ mod tests {
     fn test_unknown_to_known_value() {
         let mut map = AttributeMap::new();
         map.append_unknown(Mid::NAME, Some("test".to_owned())).unwrap();
-        assert_eq!(map.get::<Mid>(), Some(&Mid("test".to_owned())));
+        assert_eq!(map.get::<Mid>(), Some(&Mid("test".into())));
     }
 }
