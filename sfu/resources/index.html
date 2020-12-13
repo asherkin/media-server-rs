@@ -80,14 +80,19 @@
             });
 
             for (let track of userMedia.getTracks()) {
-                peerConnection.addTransceiver(track, {
+                const config = {
                     direction: "sendonly",
-                    sendEncodings: (track.kind === "video" && simulcastSelect.value > 0) ? [
+                };
+
+                if (track.kind === "video" && simulcastSelect.value > 0) {
+                    config.sendEncodings = [
                         { rid: 'f' },
                         { rid: 'h', scaleResolutionDownBy: 2 },
                         { rid: 'q', scaleResolutionDownBy: 4 },
-                    ].slice(0, +simulcastSelect.value) : undefined,
-                });
+                    ].slice(0, +simulcastSelect.value);
+                }
+
+                peerConnection.addTransceiver(track, config);
             }
 
             const offer = await peerConnection.createOffer();

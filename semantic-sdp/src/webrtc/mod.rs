@@ -9,15 +9,15 @@ use ordered_multimap::ListOrderedMultimap;
 use rand::Rng;
 
 use crate::attributes::{
-    Candidate, ExtensionMap, Fingerprint, FormatParameters, IceLite, IceOptions, IcePwd, IceUfrag, Inactive, Mid,
-    ReceiveOnly, Rid, RtcpFeedback, RtpMap, SendOnly, SendReceive, Setup, SsrcAttribute, SsrcGroup,
+    Candidate, ExtensionMap, Fingerprint, FormatParameters, Group, IceLite, IceOptions, IcePwd, IceUfrag, Inactive,
+    Mid, ReceiveOnly, Rid, Rtcp, RtcpFeedback, RtcpMux, RtpMap, SendOnly, SendReceive, Setup, SsrcAttribute, SsrcGroup,
 };
 use crate::enums::{
-    BandwidthType, FingerprintHashFunction, IceOption, MediaType, RidDirection, RtpCodecName, SetupRole,
-    SsrcGroupSemantics, TransportProtocol,
+    AddressType, BandwidthType, FingerprintHashFunction, GroupSemantics, IceOption, MediaType, NetworkType,
+    RidDirection, RtpCodecName, SetupRole, SsrcGroupSemantics, TransportProtocol,
 };
-use crate::types;
 use crate::types::{CertificateFingerprint, PayloadType, Ssrc};
+use crate::{sdp, types, AttributeMap};
 
 mod tests;
 
@@ -68,7 +68,7 @@ impl UnifiedBundleSession {
     }
 
     /// https://rtcweb-wg.github.io/jsep/#rfc.section.5.8
-    pub fn from_sdp(sdp: &crate::sdp::Session) -> Result<Self, String> {
+    pub fn from_sdp(sdp: &sdp::Session) -> Result<Self, String> {
         let ice_lite = sdp.attributes.get::<IceLite>().is_some();
 
         // Get ICE and DTLS info from the first m-line.
@@ -146,8 +146,50 @@ impl UnifiedBundleSession {
         Ok(session)
     }
 
-    pub fn to_sdp(&self) -> crate::sdp::Session {
-        todo!()
+    pub fn to_sdp(&self) -> sdp::Session {
+        let mut attributes = AttributeMap::new();
+
+        if self.ice_lite {
+            attributes.append(IceLite);
+        }
+
+        if !self.media_descriptions.is_empty() {
+            attributes.append(Group {
+                semantics: GroupSemantics::Bundle,
+                mids: self.media_descriptions.iter().map(|md| md.mid.clone()).collect(),
+            });
+        }
+
+        // TODO: msid-semantic ?
+
+        let media_descriptions = self.media_descriptions.iter().map(|md| md.to_sdp(self)).collect();
+
+        sdp::Session {
+            origin: sdp::Origin {
+                username: None,
+                session_id: self.id,
+                session_version: self.version,
+                network_type: NetworkType::Internet,
+                address_type: AddressType::Ip4,
+                unicast_address: "127.0.0.1".to_owned(),
+            },
+            name: None,
+            information: None,
+            uri: None,
+            email_address: None,
+            phone_number: None,
+            connection: None,
+            bandwidths: HashMap::new(),
+            times: vec![sdp::Time {
+                start: 0,
+                stop: 0,
+                repeat_times: Vec::new(),
+                time_zone_adjustments: Vec::new(),
+            }],
+            encryption_key: None,
+            attributes,
+            media_descriptions,
+        }
     }
 }
 
@@ -155,7 +197,7 @@ impl FromStr for UnifiedBundleSession {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let session = crate::sdp::Session::from_str(s)?;
+        let session = sdp::Session::from_str(s)?;
         let session = Self::from_sdp(&session)?;
         Ok(session)
     }
@@ -177,6 +219,7 @@ pub enum MediaDirection {
 
 #[derive(Debug, Clone)]
 pub struct RtpPayload {
+    pub payload_type: PayloadType,
     pub name: RtpCodecName,
     pub clock: u32,
     pub channels: Option<u8>,
@@ -208,32 +251,20 @@ pub struct RtpMediaDescription {
 
     pub mid: types::Mid,
 
-    pub payloads: HashMap<PayloadType, RtpPayload>,
+    pub payloads: Vec<RtpPayload>,
 
     pub direction: MediaDirection,
 
-    // TODO: Add `encodings` which will scoop up rid/ssrc(-group) info
     pub encodings: Vec<RtpEncoding>,
 
-    // ssrc attributes
-
-    // TODO: Parse these at some level.
-    // pub ssrc_attributes: HashMap<u32, HashMap<String, Option<String>>>,
-
-    // First SSRC of FID / FEC-FR is primary stream, 2nd is the RTX / FEC stream
-    // TODO: For those groups we want fast lookup by SSRC
-    //       Actually maybe there can only be one group per m-line?
-    //       plan-b = multiple ssrc groups per m-line
-    //       unified = single set of ssrc groups per m-line
-    // pub ssrc_groups: Vec<SsrcGroup>,
     pub extensions: HashMap<String, u16>,
-    // rtcp-fb, rtcp-mux?, rtcp-mux-only?, rtcp-rsize?
-    // msid, imageattr, rid, simulcast
+    // rtcp-mux?, rtcp-mux-only?, rtcp-rsize?
+    // msid, imageattr, simulcast
 }
 
 impl RtpMediaDescription {
     /// https://rtcweb-wg.github.io/jsep/#rfc.section.5.8
-    pub fn from_sdp(sdp: &crate::sdp::MediaDescription) -> Result<Self, String> {
+    pub fn from_sdp(sdp: &sdp::MediaDescription) -> Result<Self, String> {
         let mid = sdp.attributes.get::<Mid>().ok_or("mid is required")?.0.clone();
 
         let rtp_maps: HashMap<_, _> = sdp
@@ -285,7 +316,7 @@ impl RtpMediaDescription {
             .filter_map(|a| Some((a.payload?, (&a.id, &a.param))))
             .collect();
 
-        let payloads: HashMap<_, _> = sdp
+        let payloads: Vec<_> = sdp
             .formats
             .iter()
             .filter_map(|fmt| PayloadType::from_str(fmt).ok())
@@ -311,6 +342,7 @@ impl RtpMediaDescription {
                 let rtx_payload_type = rtx_payload_map.get(&fmt).cloned();
 
                 let payload = RtpPayload {
+                    payload_type: fmt,
                     name: map.name.clone(),
                     clock: map.clock,
                     channels: map.channels,
@@ -319,7 +351,7 @@ impl RtpMediaDescription {
                     rtx_payload_type,
                 };
 
-                Some((fmt, payload))
+                Some(payload)
             })
             .collect();
 
@@ -429,7 +461,196 @@ impl RtpMediaDescription {
         Ok(media_description)
     }
 
-    pub fn to_sdp(&self) -> crate::sdp::Session {
-        todo!()
+    pub fn to_sdp(&self, session: &UnifiedBundleSession) -> sdp::MediaDescription {
+        let mut attributes = AttributeMap::new();
+
+        attributes.append(Rtcp {
+            port: 9,
+            network_type: Some(NetworkType::Internet),
+            address_type: Some(AddressType::Ip4),
+            connection_address: Some("0.0.0.0".to_owned()),
+        });
+
+        attributes.append(IceUfrag(session.ice_ufrag.clone()));
+        attributes.append(IcePwd(session.ice_pwd.clone()));
+        attributes.append(IceOptions(session.ice_options.clone()));
+
+        for (hash_function, fingerprint) in &session.fingerprints {
+            attributes.append(Fingerprint {
+                hash_function: hash_function.clone(),
+                fingerprint: fingerprint.clone(),
+            });
+        }
+
+        attributes.append(Setup(session.setup_role.clone()));
+
+        attributes.append(Mid(self.mid.clone()));
+
+        for (extension, &id) in &self.extensions {
+            attributes.append(ExtensionMap {
+                id,
+                direction: None,
+                extension: extension.clone(),
+                attributes: Vec::new(),
+            });
+        }
+
+        match self.direction {
+            MediaDirection::SendOnly => attributes.append(SendOnly),
+            MediaDirection::ReceiveOnly => attributes.append(ReceiveOnly),
+            MediaDirection::SendReceive => attributes.append(SendReceive),
+            MediaDirection::Inactive => attributes.append(Inactive),
+        }
+
+        // TODO: msid ?
+
+        attributes.append(RtcpMux);
+
+        // TODO: rtcp-rsize?
+
+        let mut formats = Vec::new();
+
+        for payload in &self.payloads {
+            formats.push(payload.payload_type.to_string());
+
+            attributes.append(RtpMap {
+                payload: payload.payload_type,
+                name: payload.name.clone(),
+                clock: payload.clock,
+                channels: payload.channels,
+            });
+
+            for (feedback_id, feedback_param) in &payload.supported_feedback {
+                attributes.append(RtcpFeedback {
+                    payload: Some(payload.payload_type),
+                    id: feedback_id.clone(),
+                    param: feedback_param.clone(),
+                });
+            }
+
+            if !payload.parameters.is_empty() {
+                let parameters = payload
+                    .parameters
+                    .iter()
+                    .map(|(k, v)| format!("{}={}", k, v))
+                    .collect::<Vec<_>>()
+                    .join(";");
+
+                attributes.append(FormatParameters {
+                    payload: payload.payload_type,
+                    parameters,
+                });
+            }
+
+            if let Some(rtx_payload_type) = payload.rtx_payload_type {
+                formats.push(rtx_payload_type.to_string());
+
+                attributes.append(RtpMap {
+                    payload: rtx_payload_type,
+                    name: RtpCodecName::Rtx,
+                    clock: payload.clock,
+                    channels: payload.channels,
+                });
+
+                attributes.append(FormatParameters {
+                    payload: rtx_payload_type,
+                    parameters: format!("apt={}", payload.payload_type),
+                });
+            }
+        }
+
+        for encoding in &self.encodings {
+            match encoding {
+                RtpEncoding::Rid { rid, direction } => {
+                    attributes.append(Rid {
+                        rid: rid.clone(),
+                        direction: direction.clone(),
+                        restrictions: None,
+                    });
+                }
+                RtpEncoding::Ssrc { cname, ssrc, rtx_ssrc } => {
+                    attributes.append(SsrcAttribute {
+                        ssrc: *ssrc,
+                        name: "cname".to_owned(),
+                        value: Some(cname.clone()),
+                    });
+
+                    if let Some(rtx_ssrc) = rtx_ssrc {
+                        attributes.append(SsrcAttribute {
+                            ssrc: *rtx_ssrc,
+                            name: "cname".to_owned(),
+                            value: Some(cname.clone()),
+                        });
+
+                        // TODO: Firefox doesn't appear to include a ssrc-group?
+                        attributes.append(SsrcGroup {
+                            semantics: SsrcGroupSemantics::FlowIdentification,
+                            ssrcs: vec![*ssrc, *rtx_ssrc],
+                        });
+                    }
+                }
+            }
+        }
+
+        let mut simulcast_value = String::new();
+
+        let send_rid_encodings: Vec<_> = self
+            .encodings
+            .iter()
+            .filter_map(|e| match e {
+                RtpEncoding::Rid {
+                    rid,
+                    direction: RidDirection::Send,
+                } => Some(rid.0.clone()),
+                _ => None,
+            })
+            .collect();
+
+        if !send_rid_encodings.is_empty() {
+            simulcast_value += &format!("send {}", send_rid_encodings.join(";"))
+        }
+
+        let recv_rid_encodings: Vec<_> = self
+            .encodings
+            .iter()
+            .filter_map(|e| match e {
+                RtpEncoding::Rid {
+                    rid,
+                    direction: RidDirection::Receive,
+                } => Some(rid.0.clone()),
+                _ => None,
+            })
+            .collect();
+
+        if !recv_rid_encodings.is_empty() {
+            if !send_rid_encodings.is_empty() {
+                simulcast_value += " ";
+            }
+
+            simulcast_value += &format!("recv {}", recv_rid_encodings.join(";"))
+        }
+
+        if !simulcast_value.is_empty() {
+            // TODO: We haven't implemented a type for this attribute yet,
+            //       as the full parsing of it is fairly complex.
+            attributes.append_unknown("simulcast", Some(simulcast_value)).unwrap();
+        }
+
+        sdp::MediaDescription {
+            kind: self.kind.clone(),
+            port: 9,
+            num_ports: None,
+            protocol: self.protocol.clone(),
+            formats,
+            title: None,
+            connection: Some(sdp::Connection {
+                network_type: NetworkType::Internet,
+                address_type: AddressType::Ip4,
+                connection_address: "0.0.0.0".to_owned(),
+            }),
+            bandwidths: self.bandwidths.clone(),
+            encryption_key: None,
+            attributes,
+        }
     }
 }

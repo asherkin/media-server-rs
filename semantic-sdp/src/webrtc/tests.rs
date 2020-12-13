@@ -35,6 +35,13 @@ fn parse_offer_chrome_ssrc() {
 }
 
 #[test]
+fn parse_and_serialize_offer_chrome_ssrc() {
+    let parsed = UnifiedBundleSession::from_str(SDP_OFFER_CHROME_SSRC).unwrap();
+    let serialized = parsed.to_string();
+    assert_eq!(SDP_OFFER_CHROME_SSRC, serialized);
+}
+
+#[test]
 fn parse_offer_chrome_rid() {
     let session = match UnifiedBundleSession::from_str(SDP_OFFER_CHROME_RID) {
         Ok(session) => session,
@@ -42,6 +49,13 @@ fn parse_offer_chrome_rid() {
     };
 
     println!("{:#?}", session);
+}
+
+#[test]
+fn parse_and_serialize_offer_chrome_rid() {
+    let parsed = UnifiedBundleSession::from_str(SDP_OFFER_CHROME_RID).unwrap();
+    let serialized = parsed.to_string();
+    assert_eq!(SDP_OFFER_CHROME_RID, serialized);
 }
 
 #[test]
