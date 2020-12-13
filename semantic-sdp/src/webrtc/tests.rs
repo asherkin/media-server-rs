@@ -66,6 +66,20 @@ fn answer_offer() {
 }
 
 #[test]
+fn answer_offer_chrome_ssrc() {
+    let offer = UnifiedBundleSession::from_str(SDP_OFFER_CHROME_SSRC).unwrap();
+    let answer = offer.answer();
+    println!("{}", answer);
+}
+
+#[test]
+fn answer_offer_chrome_rid() {
+    let offer = UnifiedBundleSession::from_str(SDP_OFFER_CHROME_RID).unwrap();
+    let answer = offer.answer();
+    println!("{}", answer);
+}
+
+#[test]
 fn parse_answer() {
     let session = match UnifiedBundleSession::from_str(SDP_ANSWER) {
         Ok(session) => session,

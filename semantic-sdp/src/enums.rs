@@ -168,6 +168,25 @@ pub enum SetupRole {
     HoldConnection,
 }
 
+impl SetupRole {
+    pub fn reverse(&self) -> SetupRole {
+        match self {
+            SetupRole::Active => SetupRole::Passive,
+            SetupRole::Passive => SetupRole::Active,
+            // ActivePassive should return Active according to the spec, but
+            // JS semantic-sdp returns Passive to match the media-server
+            // behaviour. The media-server behaviour appears to possibly be a
+            // bug, the code translates "actpass" to "active" if itself is
+            // currently set to "actpass", but DTLSConnection is initialised
+            // in a mode of "passive", so that sticks. That said, with
+            // media-server being ice-lite and never making outgoing ICE
+            // connections, taking the Passive role probably makes sense.
+            SetupRole::ActivePassive => SetupRole::Passive,
+            SetupRole::HoldConnection => SetupRole::HoldConnection,
+        }
+    }
+}
+
 #[non_exhaustive]
 #[derive(Debug, Clone, SdpEnum)]
 pub enum FingerprintHashFunction {
@@ -243,6 +262,15 @@ pub enum RidDirection {
     Send,
     #[sdp("recv")]
     Receive,
+}
+
+impl RidDirection {
+    pub fn reverse(&self) -> RidDirection {
+        match self {
+            RidDirection::Send => RidDirection::Receive,
+            RidDirection::Receive => RidDirection::Send,
+        }
+    }
 }
 
 #[non_exhaustive]

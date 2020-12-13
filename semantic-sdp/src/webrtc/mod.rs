@@ -58,13 +58,27 @@ impl UnifiedBundleSession {
             ice_options: HashSet::new(),
             candidates: Vec::new(),
             fingerprints: ListOrderedMultimap::new(),
-            setup_role: SetupRole::Passive,
+            setup_role: SetupRole::ActivePassive,
             media_descriptions: Vec::new(),
         }
     }
 
     pub fn answer(&self) -> UnifiedBundleSession {
-        todo!()
+        use rand::distributions::Alphanumeric;
+        let mut rng = rand::thread_rng();
+
+        UnifiedBundleSession {
+            id: rng.gen_range(0, 9_223_372_036_854_775_807),
+            version: 1,
+            ice_lite: true,
+            ice_ufrag: rng.sample_iter(Alphanumeric).take(8).collect(),
+            ice_pwd: rng.sample_iter(Alphanumeric).take(24).collect(),
+            ice_options: HashSet::new(),
+            candidates: Vec::new(),
+            fingerprints: ListOrderedMultimap::new(),
+            setup_role: self.setup_role.reverse(),
+            media_descriptions: self.media_descriptions.iter().map(|md| md.answer()).collect(),
+        }
     }
 
     /// https://rtcweb-wg.github.io/jsep/#rfc.section.5.8
@@ -217,6 +231,17 @@ pub enum MediaDirection {
     Inactive,
 }
 
+impl MediaDirection {
+    pub fn reverse(&self) -> MediaDirection {
+        match self {
+            MediaDirection::SendOnly => MediaDirection::ReceiveOnly,
+            MediaDirection::ReceiveOnly => MediaDirection::SendOnly,
+            MediaDirection::SendReceive => MediaDirection::SendReceive,
+            MediaDirection::Inactive => MediaDirection::Inactive,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct RtpPayload {
     pub payload_type: PayloadType,
@@ -234,7 +259,7 @@ pub enum RtpEncoding {
         rid: types::Rid,
         direction: RidDirection,
     },
-    Ssrc {
+    SendingSsrc {
         cname: String,
         ssrc: Ssrc,
         rtx_ssrc: Option<Ssrc>,
@@ -263,6 +288,119 @@ pub struct RtpMediaDescription {
 }
 
 impl RtpMediaDescription {
+    pub fn answer(&self) -> RtpMediaDescription {
+        // TODO: Let the user specify these functions.
+
+        let is_extension_supported: fn(&String) -> bool = match self.kind {
+            MediaType::Audio => |extension| match extension.as_str() {
+                "urn:ietf:params:rtp-hdrext:ssrc-audio-level" => true,
+                "urn:ietf:params:rtp-hdrext:sdes:mid" => true,
+                "urn:ietf:params:rtp-hdrext:sdes:rtp-stream-id" => true,
+                "http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time" => true,
+                _ => false,
+            },
+            MediaType::Video => |extension| match extension.as_str() {
+                "urn:3gpp:video-orientation" => true,
+                "http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01" => true,
+                "urn:ietf:params:rtp-hdrext:sdes:mid" => true,
+                "urn:ietf:params:rtp-hdrext:sdes:rtp-stream-id" => true,
+                "urn:ietf:params:rtp-hdrext:sdes:repaired-rtp-stream-id" => true,
+                "http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time" => true,
+                _ => false,
+            },
+            _ => |_| false,
+        };
+
+        let is_payload_supported: fn(&RtpPayload) -> bool = match self.kind {
+            MediaType::Audio => |payload| match &payload.name {
+                RtpCodecName::Opus => true,
+                RtpCodecName::Pcmu => true,
+                RtpCodecName::Pcma => true,
+                _ => false,
+            },
+            MediaType::Video => |payload| match &payload.name {
+                RtpCodecName::Vp8 => true,
+                RtpCodecName::Vp9 => true,
+                RtpCodecName::H264 => match payload.parameters.get("packetization-mode") {
+                    Some(mode) => mode == "1",
+                    None => false,
+                },
+                _ => false,
+            },
+            _ => |_| false,
+        };
+
+        let is_feedback_supported: fn(&String, &Option<String>) -> bool = match self.kind {
+            MediaType::Video => |id, param| match (id.as_str(), param.as_deref()) {
+                ("goog-remb", None) => true,
+                ("transport-cc", None) => true,
+                ("ccm", Some("fir")) => true,
+                ("nack", None) => true,
+                ("nack", Some("pli")) => true,
+                _ => false,
+            },
+            _ => |_, _| false,
+        };
+
+        let payloads = self
+            .payloads
+            .iter()
+            .filter_map(|payload| {
+                if !is_payload_supported(payload) {
+                    return None;
+                }
+
+                let supported_feedback = payload
+                    .supported_feedback
+                    .iter()
+                    .filter(|(id, param)| is_feedback_supported(id, param))
+                    .map(|(id, param)| (id.clone(), param.clone()))
+                    .collect();
+
+                Some(RtpPayload {
+                    payload_type: payload.payload_type,
+                    name: payload.name.clone(),
+                    clock: payload.clock,
+                    channels: payload.channels,
+                    parameters: payload.parameters.clone(),
+                    supported_feedback,
+                    rtx_payload_type: payload.rtx_payload_type,
+                })
+            })
+            .collect();
+
+        let encodings = self
+            .encodings
+            .iter()
+            .filter_map(|encoding| match encoding {
+                RtpEncoding::Rid { rid, direction } => Some(RtpEncoding::Rid {
+                    rid: rid.clone(),
+                    direction: direction.reverse(),
+                }),
+                RtpEncoding::SendingSsrc { .. } => None,
+            })
+            .collect();
+
+        let extensions = self
+            .extensions
+            .iter()
+            .filter(|(extension, _id)| is_extension_supported(extension))
+            .map(|(extension, id)| (extension.clone(), *id))
+            .collect();
+
+        RtpMediaDescription {
+            kind: self.kind.clone(),
+            port: self.port,
+            protocol: self.protocol.clone(),
+            bandwidths: HashMap::new(),
+            mid: self.mid.clone(),
+            payloads,
+            direction: self.direction.reverse(),
+            encodings,
+            extensions,
+        }
+    }
+
     /// https://rtcweb-wg.github.io/jsep/#rfc.section.5.8
     pub fn from_sdp(sdp: &sdp::MediaDescription) -> Result<Self, String> {
         let mid = sdp.attributes.get::<Mid>().ok_or("mid is required")?.0.clone();
@@ -421,7 +559,7 @@ impl RtpMediaDescription {
         let cname = ssrc.and_then(|ssrc| ssrc_attributes.get(&ssrc)?.get("cname")?.clone());
 
         if let (Some(ssrc), Some(cname)) = (ssrc, cname) {
-            let ssrc_encoding = RtpEncoding::Ssrc { cname, ssrc, rtx_ssrc };
+            let ssrc_encoding = RtpEncoding::SendingSsrc { cname, ssrc, rtx_ssrc };
 
             encodings.push(ssrc_encoding);
         }
@@ -433,8 +571,8 @@ impl RtpMediaDescription {
             .filter_map(|map| {
                 if map.direction.is_some() {
                     // Directional extensions are not supported.
-                    // TODO: Looks like Firefox might use them, just ignore the direction for now.
-                    // return None;
+                    // TODO: Firefox uses them.
+                    return None;
                 }
 
                 if !map.attributes.is_empty() {
@@ -473,7 +611,14 @@ impl RtpMediaDescription {
 
         attributes.append(IceUfrag(session.ice_ufrag.clone()));
         attributes.append(IcePwd(session.ice_pwd.clone()));
-        attributes.append(IceOptions(session.ice_options.clone()));
+
+        if !session.ice_options.is_empty() {
+            attributes.append(IceOptions(session.ice_options.clone()));
+        }
+
+        for candidate in &session.candidates {
+            attributes.append(candidate.clone());
+        }
 
         for (hash_function, fingerprint) in &session.fingerprints {
             attributes.append(Fingerprint {
@@ -568,7 +713,7 @@ impl RtpMediaDescription {
                         restrictions: None,
                     });
                 }
-                RtpEncoding::Ssrc { cname, ssrc, rtx_ssrc } => {
+                RtpEncoding::SendingSsrc { cname, ssrc, rtx_ssrc } => {
                     attributes.append(SsrcAttribute {
                         ssrc: *ssrc,
                         name: "cname".to_owned(),
