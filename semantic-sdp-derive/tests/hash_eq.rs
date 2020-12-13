@@ -1,6 +1,7 @@
 use semantic_sdp_derive::SdpEnum;
 
 // Required by SdpEnum derive macro
+#[derive(Debug)]
 enum EnumParseError {
     #[allow(dead_code)]
     VariantNotFound,
@@ -15,6 +16,18 @@ enum GroupSemantics {
     Bundle,
     #[sdp(default)]
     Unknown(String),
+}
+
+#[test]
+fn parse_unknown_preserve_case() {
+    use std::str::FromStr;
+
+    let gs = GroupSemantics::from_str("FOO").unwrap();
+    if let GroupSemantics::Unknown(s) = gs {
+        assert_eq!(s, "FOO");
+    } else {
+        panic!("FOO was not parsed as GroupSemantics::Unknown");
+    }
 }
 
 #[test]

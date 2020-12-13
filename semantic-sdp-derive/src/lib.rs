@@ -77,7 +77,7 @@ fn sdp_enum_inner(ast: &DeriveInput) -> syn::Result<TokenStream> {
             default_kw = Some(sdp_attr);
 
             from_str_default = quote! {
-                default => ::std::result::Result::Ok(#name::#ident(default.into()))
+                _ => ::std::result::Result::Ok(#name::#ident(s.into()))
             };
 
             as_ref_arms.push(quote! { #name::#ident (s) => s });
