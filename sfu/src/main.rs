@@ -5,14 +5,14 @@ use serde::{Deserialize, Serialize};
 use warp::ws::Message;
 use warp::Filter;
 
-use media_server::sdp::webrtc::Session;
+use media_server::sdp::webrtc::UnifiedBundleSession;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 enum C2SMessage {
     Offer {
         #[serde(with = "serde_with::rust::display_fromstr")]
-        sdp: Session,
+        sdp: UnifiedBundleSession,
     },
 }
 
@@ -21,7 +21,7 @@ enum C2SMessage {
 enum S2CMessage {
     Answer {
         #[serde(with = "serde_with::rust::display_fromstr")]
-        sdp: Session,
+        sdp: UnifiedBundleSession,
     },
 }
 
@@ -35,7 +35,7 @@ async fn send_message(websocket: &mut warp::ws::WebSocket, message: &S2CMessage)
     Ok(())
 }
 
-async fn handle_offer(websocket: &mut warp::ws::WebSocket, offer: &Session) -> Result<(), Box<dyn Error>> {
+async fn handle_offer(websocket: &mut warp::ws::WebSocket, offer: &UnifiedBundleSession) -> Result<(), Box<dyn Error>> {
     // TODO: We want to implement something along the lines of the
     //       media-server-node manual signalling example in here.
     //       https://github.com/medooze/media-server-node/blob/master/manual.md

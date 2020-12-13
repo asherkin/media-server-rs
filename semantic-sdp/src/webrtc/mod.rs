@@ -9,93 +9,120 @@ use ordered_multimap::ListOrderedMultimap;
 use rand::Rng;
 
 use crate::attributes::{
-    Candidate, EndOfCandidates, ExtensionMap, Fingerprint, FormatParameters, Group, IceLite, IceOptions, IcePwd,
-    IceUfrag, Inactive, MaxPacketTime, Mid, PacketTime, ReceiveOnly, RtpMap, SendOnly, SendReceive, Setup,
+    Candidate, ExtensionMap, Fingerprint, FormatParameters, IceLite, IceOptions, IcePwd, IceUfrag, Inactive, Mid,
+    ReceiveOnly, Rid, RtcpFeedback, RtpMap, SendOnly, SendReceive, Setup, SsrcAttribute, SsrcGroup,
 };
-use crate::enums::{BandwidthType, FingerprintHashFunction, IceOption, MediaType, SetupRole, TransportProtocol};
+use crate::enums::{
+    BandwidthType, FingerprintHashFunction, IceOption, MediaType, RidDirection, RtpCodecName, SetupRole,
+    SsrcGroupSemantics, TransportProtocol,
+};
 use crate::types;
-use crate::types::{CertificateFingerprint, PayloadType};
+use crate::types::{CertificateFingerprint, PayloadType, Ssrc};
 
 mod tests;
 
-// TODO: While higher level than the raw SDP, this is still quite low-level.
-//       We'd like this module to be quite a high-level interface, but maybe
-//       that needs to be built as yet another level of abstraction on top.
-// TODO: Alternatively, JS semantic-sdp clearly works quite well in the real
-//       world. We could ignore the spec behaviour here and use the parsing
-//       strategy from there - which is a lot simpler and has a nicer interface,
-//       at the cost of embedding non-spec assumptions about the SDP format
-//       and restricting the functionality supported.
+/// Simplified SDP representation for a unified-plan WebRTC session with a single bundled transport.
+///
+/// A lot of functionality is unable to be represented here, but it should have enough to negotiate
+/// a RTP-only multi-track session with modern versions of the major browsers.
 #[derive(Debug, Clone)]
-pub struct Session {
+pub struct UnifiedBundleSession {
     pub id: u64,
     pub version: u64,
-    pub bandwidths: HashMap<BandwidthType, u64>,
-
-    pub groups: Vec<Group>,
 
     pub ice_lite: bool,
-    pub ice_ufrag: Option<String>,
-    pub ice_pwd: Option<String>,
+    pub ice_ufrag: String,
+    pub ice_pwd: String,
     pub ice_options: HashSet<IceOption>,
+    pub candidates: Vec<Candidate>,
 
     pub fingerprints: ListOrderedMultimap<FingerprintHashFunction, CertificateFingerprint>,
-    pub setup_role: Option<SetupRole>,
-
-    pub extensions: Vec<ExtensionMap>,
+    pub setup_role: SetupRole,
 
     // TODO: Support non-RTP media
     pub media_descriptions: Vec<RtpMediaDescription>,
 }
 
-impl Session {
+impl UnifiedBundleSession {
     // TODO: This probably needs a builder class.
-    pub fn new() -> Session {
+    pub fn new() -> UnifiedBundleSession {
         use rand::distributions::Alphanumeric;
         let mut rng = rand::thread_rng();
 
-        Session {
+        UnifiedBundleSession {
             id: rng.gen_range(0, 9_223_372_036_854_775_807),
             version: 1,
-            bandwidths: HashMap::new(),
-            groups: Vec::new(),
-            ice_lite: false,
-            ice_ufrag: Some(rng.sample_iter(Alphanumeric).take(8).collect()),
-            ice_pwd: Some(rng.sample_iter(Alphanumeric).take(24).collect()),
+            ice_lite: true,
+            ice_ufrag: rng.sample_iter(Alphanumeric).take(8).collect(),
+            ice_pwd: rng.sample_iter(Alphanumeric).take(24).collect(),
             ice_options: HashSet::new(),
+            candidates: Vec::new(),
             fingerprints: ListOrderedMultimap::new(),
-            setup_role: None,
-            extensions: Vec::new(),
+            setup_role: SetupRole::Passive,
             media_descriptions: Vec::new(),
         }
     }
 
-    pub fn answer(&self) -> Session {
+    pub fn answer(&self) -> UnifiedBundleSession {
         todo!()
     }
 
     /// https://rtcweb-wg.github.io/jsep/#rfc.section.5.8
     pub fn from_sdp(sdp: &crate::sdp::Session) -> Result<Self, String> {
-        let groups = sdp.attributes.get_vec::<Group>().into_iter().cloned().collect();
-
         let ice_lite = sdp.attributes.get::<IceLite>().is_some();
-        let ice_ufrag = sdp.attributes.get::<IceUfrag>().map(|a| a.0.clone());
-        let ice_pwd = sdp.attributes.get::<IcePwd>().map(|a| a.0.clone());
-        let ice_options = sdp
+
+        // Get ICE and DTLS info from the first m-line.
+        // TODO: We're lazy and just assume max-bundle if this struct is being used.
+        // TODO: WebRTC can generate an offer with 0 m-lines as part of a perfect
+        //       negotiation strategy, we should handle it although can do nothing useful.
+        let first_media_description = sdp
+            .media_descriptions
+            .first()
+            .ok_or("at least one m-line is required")?;
+
+        let ice_ufrag = first_media_description
+            .attributes
+            .get::<IceUfrag>()
+            .or_else(|| sdp.attributes.get())
+            .ok_or("ice-ufrag is required")?
+            .0
+            .clone();
+
+        let ice_pwd = first_media_description
+            .attributes
+            .get::<IcePwd>()
+            .or_else(|| sdp.attributes.get())
+            .ok_or("ice-pwd is required")?
+            .0
+            .clone();
+
+        let ice_options = first_media_description
             .attributes
             .get::<IceOptions>()
+            .or_else(|| sdp.attributes.get())
             .map_or_else(HashSet::new, |a| a.0.clone());
 
-        let fingerprints = sdp
+        let candidates = first_media_description
+            .attributes
+            .get_vec::<Candidate>()
+            .into_iter()
+            .cloned()
+            .collect();
+
+        let fingerprints = first_media_description
             .attributes
             .get_vec::<Fingerprint>()
             .into_iter()
+            .chain(sdp.attributes.get_vec())
             .map(|a| (a.hash_function.clone(), a.fingerprint.clone()))
             .collect();
 
-        let setup_role = sdp.attributes.get::<Setup>().map(|a| a.0.clone());
-
-        let extensions = sdp.attributes.get_vec::<ExtensionMap>().into_iter().cloned().collect();
+        let setup_role = first_media_description
+            .attributes
+            .get::<Setup>()
+            .or_else(|| sdp.attributes.get())
+            .map(|a| a.0.clone())
+            .unwrap_or(SetupRole::ActivePassive);
 
         let media_descriptions = sdp
             .media_descriptions
@@ -103,18 +130,16 @@ impl Session {
             .map(RtpMediaDescription::from_sdp)
             .collect::<Result<Vec<_>, _>>()?;
 
-        let session = Session {
+        let session = UnifiedBundleSession {
             id: sdp.origin.session_id,
             version: sdp.origin.session_version,
-            bandwidths: sdp.bandwidths.clone(),
-            groups,
             ice_lite,
             ice_ufrag,
             ice_pwd,
             ice_options,
+            candidates,
             fingerprints,
             setup_role,
-            extensions,
             media_descriptions,
         };
 
@@ -126,7 +151,7 @@ impl Session {
     }
 }
 
-impl FromStr for Session {
+impl FromStr for UnifiedBundleSession {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -136,7 +161,7 @@ impl FromStr for Session {
     }
 }
 
-impl std::fmt::Display for Session {
+impl std::fmt::Display for UnifiedBundleSession {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         self.to_sdp().fmt(f)
     }
@@ -150,15 +175,27 @@ pub enum MediaDirection {
     Inactive,
 }
 
-// TODO: Include RTX/FEC as part of this rather than their own payloads?
-// TODO: If we ignore support for wildcard rtcp-fb attributes, we can include those here.
 #[derive(Debug, Clone)]
 pub struct RtpPayload {
-    pub name: String,
+    pub name: RtpCodecName,
     pub clock: u32,
     pub channels: Option<u8>,
-    // TODO: Parse H264 profile info
-    pub parameters: Option<String>,
+    pub parameters: HashMap<String, String>,
+    pub supported_feedback: ListOrderedMultimap<String, Option<String>>,
+    pub rtx_payload_type: Option<PayloadType>,
+}
+
+#[derive(Debug, Clone)]
+pub enum RtpEncoding {
+    Rid {
+        rid: types::Rid,
+        direction: RidDirection,
+    },
+    Ssrc {
+        cname: String,
+        ssrc: Ssrc,
+        rtx_ssrc: Option<Ssrc>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -169,37 +206,27 @@ pub struct RtpMediaDescription {
 
     pub bandwidths: HashMap<BandwidthType, u64>,
 
-    pub ice_ufrag: Option<String>,
-    pub ice_pwd: Option<String>,
-    pub ice_options: HashSet<IceOption>,
-
-    pub has_end_of_candidates: bool,
-    pub candidates: Vec<Candidate>,
-
-    pub fingerprints: ListOrderedMultimap<FingerprintHashFunction, CertificateFingerprint>,
-    pub setup_role: Option<SetupRole>,
-
-    pub mid: Option<types::Mid>,
+    pub mid: types::Mid,
 
     pub payloads: HashMap<PayloadType, RtpPayload>,
 
-    pub packet_time: Option<u32>,
-    pub max_packet_time: Option<u32>,
-
     pub direction: MediaDirection,
+
+    // TODO: Add `encodings` which will scoop up rid/ssrc(-group) info
+    pub encodings: Vec<RtpEncoding>,
 
     // ssrc attributes
 
     // TODO: Parse these at some level.
     // pub ssrc_attributes: HashMap<u32, HashMap<String, Option<String>>>,
 
-    // ssrc-group seems to have been removed from JSEP?
-
     // First SSRC of FID / FEC-FR is primary stream, 2nd is the RTX / FEC stream
     // TODO: For those groups we want fast lookup by SSRC
     //       Actually maybe there can only be one group per m-line?
+    //       plan-b = multiple ssrc groups per m-line
+    //       unified = single set of ssrc groups per m-line
     // pub ssrc_groups: Vec<SsrcGroup>,
-    pub extensions: Vec<ExtensionMap>,
+    pub extensions: HashMap<String, u16>,
     // rtcp-fb, rtcp-mux?, rtcp-mux-only?, rtcp-rsize?
     // msid, imageattr, rid, simulcast
 }
@@ -207,26 +234,7 @@ pub struct RtpMediaDescription {
 impl RtpMediaDescription {
     /// https://rtcweb-wg.github.io/jsep/#rfc.section.5.8
     pub fn from_sdp(sdp: &crate::sdp::MediaDescription) -> Result<Self, String> {
-        let ice_ufrag = sdp.attributes.get::<IceUfrag>().map(|a| a.0.clone());
-        let ice_pwd = sdp.attributes.get::<IcePwd>().map(|a| a.0.clone());
-        let ice_options = sdp
-            .attributes
-            .get::<IceOptions>()
-            .map_or_else(HashSet::new, |a| a.0.clone());
-
-        let has_end_of_candidates = sdp.attributes.get::<EndOfCandidates>().is_some();
-        let candidates = sdp.attributes.get_vec::<Candidate>().into_iter().cloned().collect();
-
-        let fingerprints = sdp
-            .attributes
-            .get_vec::<Fingerprint>()
-            .into_iter()
-            .map(|a| (a.hash_function.clone(), a.fingerprint.clone()))
-            .collect();
-
-        let setup_role = sdp.attributes.get::<Setup>().map(|a| a.0.clone());
-
-        let mid = sdp.attributes.get::<Mid>().map(|a| a.0.clone());
+        let mid = sdp.attributes.get::<Mid>().ok_or("mid is required")?.0.clone();
 
         let rtp_maps: HashMap<_, _> = sdp
             .attributes
@@ -239,7 +247,42 @@ impl RtpMediaDescription {
             .attributes
             .get_vec::<FormatParameters>()
             .into_iter()
-            .map(|a| (a.payload, a))
+            .map(|a| {
+                let parameters: HashMap<_, _> = a
+                    .parameters
+                    .split(';')
+                    .filter_map(|parameter| {
+                        // A few codecs don't use the recommended key=value form,
+                        // but we don't care about those so just ignore any without a '='.
+                        let (k, v) = parameter.split_at(parameter.find('=')?);
+                        Some((k.to_owned(), v[1..].to_owned()))
+                    })
+                    .collect();
+
+                (a.payload, parameters)
+            })
+            .collect();
+
+        let rtx_payload_map: HashMap<_, _> = rtp_maps
+            .iter()
+            .filter_map(|(fmt, map)| {
+                if map.name != RtpCodecName::Rtx {
+                    return None;
+                }
+
+                let attributes = format_parameters.get(fmt)?;
+                let apt = attributes.get("apt")?;
+                let apt = PayloadType::from_str(apt).ok()?;
+
+                Some((apt, *fmt))
+            })
+            .collect();
+
+        let supported_feedback: ListOrderedMultimap<_, _> = sdp
+            .attributes
+            .get_vec::<RtcpFeedback>()
+            .into_iter()
+            .filter_map(|a| Some((a.payload?, (&a.id, &a.param))))
             .collect();
 
         let payloads: HashMap<_, _> = sdp
@@ -248,21 +291,37 @@ impl RtpMediaDescription {
             .filter_map(|fmt| PayloadType::from_str(fmt).ok())
             .filter_map(|fmt| {
                 let map = rtp_maps.get(&fmt)?;
-                let parameters = format_parameters.get(&fmt);
+
+                // Filter out known non-media types.
+                match map.name {
+                    RtpCodecName::Rtx => return None,
+                    RtpCodecName::Red => return None,
+                    RtpCodecName::UlpFec => return None,
+                    RtpCodecName::FlexFec => return None,
+                    _ => (),
+                }
+
+                let parameters = format_parameters.get(&fmt).map_or_else(HashMap::new, Clone::clone);
+
+                let supported_feedback = supported_feedback
+                    .get_all(&fmt)
+                    .map(|&(id, param)| (id.to_owned(), param.to_owned()))
+                    .collect();
+
+                let rtx_payload_type = rtx_payload_map.get(&fmt).cloned();
 
                 let payload = RtpPayload {
                     name: map.name.clone(),
                     clock: map.clock,
                     channels: map.channels,
-                    parameters: parameters.map(|p| p.parameters.clone()),
+                    parameters,
+                    supported_feedback,
+                    rtx_payload_type,
                 };
 
                 Some((fmt, payload))
             })
             .collect();
-
-        let packet_time = sdp.attributes.get::<PacketTime>().map(|a| a.0);
-        let max_packet_time = sdp.attributes.get::<MaxPacketTime>().map(|a| a.0);
 
         let has_sendonly = sdp.attributes.get::<SendOnly>().is_some();
         let has_recvonly = sdp.attributes.get::<ReceiveOnly>().is_some();
@@ -276,25 +335,94 @@ impl RtpMediaDescription {
             _ => return Err("Multiple direction attributes found in m-line".to_owned()),
         };
 
-        let extensions = sdp.attributes.get_vec::<ExtensionMap>().into_iter().cloned().collect();
+        let mut encodings = Vec::new();
+
+        // TODO: Right now we ignore the simulcast attribute and just assume all RIDs are simulcast.
+
+        let rid_encodings = sdp.attributes.get_vec::<Rid>().into_iter().filter_map(|attribute| {
+            if attribute.restrictions.is_some() {
+                // TODO: Restricted RIDs can't currently be represented.
+                return None;
+            }
+
+            let rid_encoding = RtpEncoding::Rid {
+                rid: attribute.rid.clone(),
+                direction: attribute.direction.clone(),
+            };
+
+            Some(rid_encoding)
+        });
+
+        encodings.extend(rid_encodings);
+
+        // TODO: Only look for ssrc-based encodings if no rid-based encodings specified?
+
+        let ssrc_groups: HashMap<_, _> = sdp
+            .attributes
+            .get_vec::<SsrcGroup>()
+            .into_iter()
+            .map(|group| (&group.semantics, &group.ssrcs))
+            .collect();
+
+        let ssrc_attributes: HashMap<_, _> = sdp
+            .attributes
+            .get_vec::<SsrcAttribute>()
+            .into_iter()
+            .map(|attribute| (attribute.ssrc, attribute))
+            .collect::<ListOrderedMultimap<_, _>>()
+            .drain_pairs()
+            .map(|(ssrc, attributes)| {
+                let attributes: HashMap<_, _> = attributes
+                    .map(|attribute| (attribute.name.to_ascii_lowercase(), attribute.value.clone()))
+                    .collect();
+
+                (ssrc, attributes)
+            })
+            .collect();
+
+        let fid_group = ssrc_groups.get(&SsrcGroupSemantics::FlowIdentification);
+        let (ssrc, rtx_ssrc) = match fid_group {
+            Some(group) => (group.get(0).cloned(), group.get(1).cloned()),
+            None => (ssrc_attributes.keys().next().cloned(), None),
+        };
+
+        let cname = ssrc.and_then(|ssrc| ssrc_attributes.get(&ssrc)?.get("cname")?.clone());
+
+        if let (Some(ssrc), Some(cname)) = (ssrc, cname) {
+            let ssrc_encoding = RtpEncoding::Ssrc { cname, ssrc, rtx_ssrc };
+
+            encodings.push(ssrc_encoding);
+        }
+
+        let extensions = sdp
+            .attributes
+            .get_vec::<ExtensionMap>()
+            .into_iter()
+            .filter_map(|map| {
+                if map.direction.is_some() {
+                    // Directional extensions are not supported.
+                    // TODO: Looks like Firefox might use them, just ignore the direction for now.
+                    // return None;
+                }
+
+                if !map.attributes.is_empty() {
+                    // Extensions with attributes are not supported.
+                    return None;
+                }
+
+                Some((map.extension.clone(), map.id))
+            })
+            .collect();
 
         let media_description = RtpMediaDescription {
             kind: sdp.kind.clone(),
             port: sdp.port,
             protocol: sdp.protocol.clone(),
             bandwidths: sdp.bandwidths.clone(),
-            ice_ufrag,
-            ice_pwd,
-            ice_options,
-            has_end_of_candidates,
-            candidates,
-            fingerprints,
-            setup_role,
             mid,
             payloads,
-            packet_time,
-            max_packet_time,
             direction,
+            encodings,
             extensions,
         };
 

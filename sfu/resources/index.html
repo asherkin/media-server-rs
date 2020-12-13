@@ -9,6 +9,17 @@
         <div style="width: 384px; height: 216px; background: black; margin: 1em 0;">
             <video id="local-video" muted autoplay playsinline style="width: 100%; height: 100%;"></video>
         </div>
+        <div style="margin: 1em 0;">
+            <label>
+                Simulcast:
+                <select id="simulcast">
+                    <option value="0">Disabled</option>
+                    <option value="1">x1</option>
+                    <option value="2">x2</option>
+                    <option value="3">x3</option>
+                </select>
+            </label>
+        </div>
         <button id="start-button" type="button" style="width: 100%;">Start</button>
     </div>
 
@@ -16,6 +27,7 @@
     <script>
         const localVideo = /** @type {HTMLVideoElement} */ document.getElementById("local-video");
         const startButton = /** @type {HTMLButtonElement} */ document.getElementById("start-button");
+        const simulcastSelect = /** @type {HTMLSelectElement} */ document.getElementById('simulcast');
 
         /**
          * @returns {Promise<WebSocket>}
@@ -70,6 +82,11 @@
             for (let track of userMedia.getTracks()) {
                 peerConnection.addTransceiver(track, {
                     direction: "sendonly",
+                    sendEncodings: (track.kind === "video" && simulcastSelect.value > 0) ? [
+                        { rid: 'f' },
+                        { rid: 'h', scaleResolutionDownBy: 2 },
+                        { rid: 'q', scaleResolutionDownBy: 4 },
+                    ].slice(0, +simulcastSelect.value) : undefined,
                 });
             }
 
