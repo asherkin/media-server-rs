@@ -109,7 +109,7 @@ impl AttributeMap {
 #[cfg(test)]
 mod tests {
     use crate::attributes::{IceLite, Mid, NamedAttribute};
-    use crate::{types, AttributeMap};
+    use crate::AttributeMap;
 
     #[test]
     fn test_not_existing_known() {

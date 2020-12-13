@@ -80,6 +80,36 @@ impl Borrow<str> for Mid {
     }
 }
 
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+pub struct Rid(pub String);
+
+impl From<&str> for Rid {
+    fn from(s: &str) -> Self {
+        Self(s.to_owned())
+    }
+}
+
+impl FromStr for Rid {
+    type Err = std::convert::Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self::from(s))
+    }
+}
+
+impl std::fmt::Display for Rid {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+// TODO: I'm not sure if this is the right trait to implement
+impl Borrow<str> for Rid {
+    fn borrow(&self) -> &str {
+        &self.0
+    }
+}
+
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct PayloadType(pub u8);
 

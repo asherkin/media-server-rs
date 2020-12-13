@@ -21,11 +21,15 @@ pub enum AddressType {
 #[non_exhaustive]
 #[derive(Debug, Clone, SdpEnum)]
 pub enum BandwidthType {
-    // RFC 4566
+    // RFC 3556 / 4566
     #[sdp("CT")]
     ConferenceTotal,
     #[sdp("AS")]
     ApplicationSpecific,
+
+    // RFC 3890
+    #[sdp("TIAS")]
+    TransportSpecific,
 
     #[sdp(default)]
     Unknown(String),
@@ -229,4 +233,54 @@ pub enum ExtensionMapDirection {
     SendReceive,
     #[sdp("inactive")]
     Inactive,
+}
+
+#[non_exhaustive]
+#[derive(Debug, Clone, SdpEnum)]
+pub enum RidDirection {
+    // draft-ietf-mmusic-rid
+    #[sdp("send")]
+    Send,
+    #[sdp("recv")]
+    Receive,
+}
+
+#[non_exhaustive]
+#[derive(Debug, Clone, SdpEnum)]
+pub enum RtpCodecName {
+    // Audio
+    #[sdp("PCMA")]
+    Pcma,
+    #[sdp("PCMU")]
+    Pcmu,
+    #[sdp("G722")]
+    G722,
+    #[sdp("opus")]
+    Opus,
+
+    #[sdp("CN")]
+    ComfortNoise,
+    #[sdp("telephone-event")]
+    TelephoneEvent,
+
+    // Video
+    #[sdp("H264")]
+    H264,
+    #[sdp("VP8")]
+    Vp8,
+    #[sdp("VP9")]
+    Vp9,
+
+    // Repaired / Redundant Data
+    #[sdp("rtx")]
+    Rtx,
+    #[sdp("red")]
+    Red,
+    #[sdp("ulpfec")]
+    UlpFec,
+    #[sdp("flexfec")]
+    FlexFec,
+
+    #[sdp(default)]
+    Unknown(String),
 }

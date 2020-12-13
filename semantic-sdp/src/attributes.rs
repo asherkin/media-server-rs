@@ -41,6 +41,7 @@ where
         Mid::NAME => Mid::parse_boxed(input),
         PacketTime::NAME => PacketTime::parse_boxed(input),
         ReceiveOnly::NAME => ReceiveOnly::parse_boxed(input),
+        Rid::NAME => Rid::parse_boxed(input),
         Rtcp::NAME => Rtcp::parse_boxed(input),
         RtcpFeedback::NAME => RtcpFeedback::parse_boxed(input),
         RtcpMux::NAME => RtcpMux::parse_boxed(input),
@@ -215,7 +216,7 @@ declare_simple_value_sdp_attribute!("maxptime", MaxPacketTime, u32);
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct RtpMap {
     pub payload: PayloadType,
-    pub name: String,
+    pub name: RtpCodecName,
     pub clock: u32,
     pub channels: Option<u8>,
 }
@@ -234,7 +235,7 @@ impl ParsableAttribute for RtpMap {
         let (input, _) = char(':')(input)?;
         let (input, payload) = map_res(value_field, PayloadType::from_str)(input)?;
         let (input, _) = field_separator(input)?;
-        let (input, name) = take_till1(|c| c == ' ' || c == '/')(input)?;
+        let (input, name) = map_res(take_till1(|c| c == ' ' || c == '/'), RtpCodecName::from_str)(input)?;
         let (input, _) = char('/')(input)?;
         let (input, clock) = map_res(
             take_till1(|c| c == ' ' || c == '\r' || c == '\n' || c == '/'),
@@ -245,7 +246,7 @@ impl ParsableAttribute for RtpMap {
 
         let rtpmap = RtpMap {
             payload,
-            name: name.to_owned(),
+            name,
             clock,
             channels,
         };
@@ -885,5 +886,51 @@ impl ParsableAttribute for MediaStreamIdSemantic {
     fn to_string(&self) -> Option<String> {
         // The extra space before the semantic seems to be expected by most implementations.
         Some(format!(" {} {}", self.semantic, self.msids.join(" ")))
+    }
+}
+
+// draft-ietf-mmusic-rid
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct Rid {
+    pub rid: types::Rid,
+    pub direction: RidDirection,
+    // TODO: Parse these
+    pub restrictions: Option<String>,
+}
+
+impl_value_sdp_attribute!("rid", Rid);
+
+impl ParsableAttribute for Rid {
+    fn parse<'a, E>(input: &'a str) -> nom::IResult<&'a str, Self, E>
+    where
+        E: ParseError<&'a str>
+            + ContextError<&'a str>
+            + FromExternalError<&'a str, crate::EnumParseError>
+            + FromExternalError<&'a str, std::convert::Infallible>
+            + FromExternalError<&'a str, std::num::ParseIntError>,
+    {
+        let (input, _) = char(':')(input)?;
+        let (input, rid) = map_res(value_field, types::Rid::from_str)(input)?;
+        let (input, _) = field_separator(input)?;
+        let (input, direction) = map_res(value_field, RidDirection::from_str)(input)?;
+        let (input, restrictions) = opt(preceded(field_separator, not_line_ending))(input)?;
+        let (input, _) = line_ending_or_eof(input)?;
+
+        let rid = Rid {
+            rid,
+            direction,
+            restrictions: restrictions.map(|s| s.to_owned()),
+        };
+
+        Ok((input, rid))
+    }
+
+    fn to_string(&self) -> Option<String> {
+        let restrictions = match &self.restrictions {
+            Some(restrictions) => format!(" {}", restrictions),
+            None => "".to_owned(),
+        };
+
+        Some(format!("{} {}{}", self.rid, self.direction, restrictions))
     }
 }
