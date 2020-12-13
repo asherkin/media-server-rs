@@ -10,7 +10,15 @@ use parking_lot::{const_mutex, Mutex};
 
 static INIT_MUTEX: Mutex<bool> = const_mutex(false);
 
-pub fn library_init() -> Result<()> {
+#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
+pub enum LoggingLevel {
+    None,
+    Default,
+    Debug,
+    UltraDebug,
+}
+
+pub fn library_init(logging: LoggingLevel) -> Result<()> {
     let mut is_init = INIT_MUTEX.lock();
 
     if *is_init {
@@ -20,9 +28,9 @@ pub fn library_init() -> Result<()> {
     *is_init = true;
 
     // TODO: Expose the logging config to consumers.
-    bridge::logger_enable_log(true);
-    bridge::logger_enable_debug(true);
-    bridge::logger_enable_ultra_debug(false);
+    bridge::logger_enable_log(logging >= LoggingLevel::Default);
+    bridge::logger_enable_debug(logging >= LoggingLevel::Debug);
+    bridge::logger_enable_ultra_debug(logging >= LoggingLevel::UltraDebug);
 
     bridge::openssl_class_init()?;
 

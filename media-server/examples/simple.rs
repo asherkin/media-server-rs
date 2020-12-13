@@ -5,8 +5,8 @@ use futures::future::Either;
 use futures_timer::Delay;
 
 use media_server::{
-    DtlsConnectionHash, DtlsIceTransportDtlsState, DtlsIceTransportListener, Properties, Result, RtpBundleTransport,
-    RtpBundleTransportConnection,
+    DtlsConnectionHash, DtlsIceTransportDtlsState, DtlsIceTransportListener, LoggingLevel, Properties, Result,
+    RtpBundleTransport, RtpBundleTransportConnection,
 };
 
 struct WaitForConnectionListener(Option<oneshot::Sender<()>>);
@@ -62,7 +62,7 @@ fn create_test_transport(
 }
 
 fn main() -> Result<()> {
-    media_server::library_init()?;
+    media_server::library_init(LoggingLevel::Debug)?;
 
     let one = create_test_transport("one", "two", "active")?;
     let two = create_test_transport("two", "one", "passive")?;
