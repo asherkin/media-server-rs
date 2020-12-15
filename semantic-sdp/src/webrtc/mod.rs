@@ -1,6 +1,6 @@
 //! This module implements the SDP parts of the JSEP specification.
 //!
-//! https://rtcweb-wg.github.io/jsep/#rfc.section.5
+//! <https://rtcweb-wg.github.io/jsep/#rfc.section.5>
 
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
@@ -86,7 +86,7 @@ impl UnifiedBundleSession {
         }
     }
 
-    /// https://rtcweb-wg.github.io/jsep/#rfc.section.5.8
+    /// <https://rtcweb-wg.github.io/jsep/#rfc.section.5.8>
     pub fn from_sdp(sdp: &sdp::Session) -> Result<Self, String> {
         let ice_lite = sdp.attributes.get::<IceLite>().is_some();
 
@@ -308,86 +308,6 @@ pub struct RtpMediaDescription {
 
 impl RtpMediaDescription {
     pub fn answer(&self) -> RtpMediaDescription {
-        // TODO: Let the user specify these functions.
-
-        let is_extension_supported: fn(&String) -> bool = match self.kind {
-            MediaType::Audio => |extension| match extension.as_str() {
-                "urn:ietf:params:rtp-hdrext:ssrc-audio-level" => true,
-                "urn:ietf:params:rtp-hdrext:sdes:mid" => true,
-                "urn:ietf:params:rtp-hdrext:sdes:rtp-stream-id" => true,
-                "http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time" => true,
-                _ => false,
-            },
-            MediaType::Video => |extension| match extension.as_str() {
-                "urn:3gpp:video-orientation" => true,
-                "http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01" => true,
-                "urn:ietf:params:rtp-hdrext:sdes:mid" => true,
-                "urn:ietf:params:rtp-hdrext:sdes:rtp-stream-id" => true,
-                "urn:ietf:params:rtp-hdrext:sdes:repaired-rtp-stream-id" => true,
-                "http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time" => true,
-                _ => false,
-            },
-            _ => |_| false,
-        };
-
-        let is_payload_supported: fn(&RtpPayload) -> bool = match self.kind {
-            MediaType::Audio => |payload| match &payload.name {
-                RtpCodecName::Opus => true,
-                RtpCodecName::Pcmu => true,
-                RtpCodecName::Pcma => true,
-                _ => false,
-            },
-            MediaType::Video => |payload| match &payload.name {
-                RtpCodecName::Vp8 => true,
-                RtpCodecName::Vp9 => true,
-                RtpCodecName::H264 => match payload.parameters.get("packetization-mode") {
-                    Some(mode) => mode == "1",
-                    None => false,
-                },
-                _ => false,
-            },
-            _ => |_| false,
-        };
-
-        let is_feedback_supported: fn(&String, &Option<String>) -> bool = match self.kind {
-            MediaType::Video => |id, param| match (id.as_str(), param.as_deref()) {
-                ("goog-remb", None) => true,
-                ("transport-cc", None) => true,
-                ("ccm", Some("fir")) => true,
-                ("nack", None) => true,
-                ("nack", Some("pli")) => true,
-                _ => false,
-            },
-            _ => |_, _| false,
-        };
-
-        let payloads = self
-            .payloads
-            .iter()
-            .filter_map(|payload| {
-                if !is_payload_supported(payload) {
-                    return None;
-                }
-
-                let supported_feedback = payload
-                    .supported_feedback
-                    .iter()
-                    .filter(|(id, param)| is_feedback_supported(id, param))
-                    .map(|(id, param)| (id.clone(), param.clone()))
-                    .collect();
-
-                Some(RtpPayload {
-                    payload_type: payload.payload_type,
-                    name: payload.name.clone(),
-                    clock: payload.clock,
-                    channels: payload.channels,
-                    parameters: payload.parameters.clone(),
-                    supported_feedback,
-                    rtx_payload_type: payload.rtx_payload_type,
-                })
-            })
-            .collect();
-
         let encodings = self
             .encodings
             .iter()
@@ -400,30 +320,23 @@ impl RtpMediaDescription {
             })
             .collect();
 
-        let extensions = self
-            .extensions
-            .iter()
-            .filter(|(extension, _id)| is_extension_supported(extension))
-            .map(|(extension, id)| (extension.clone(), *id))
-            .collect();
-
         RtpMediaDescription {
             kind: self.kind.clone(),
             port: self.port,
             protocol: self.protocol.clone(),
             bandwidths: HashMap::new(),
             mid: self.mid.clone(),
-            payloads,
+            payloads: self.payloads.clone(),
             direction: self.direction.reverse(),
             encodings,
-            extensions,
+            extensions: self.extensions.clone(),
             rtcp_mux: self.rtcp_mux,
             rtcp_mux_only: self.rtcp_mux_only,
             rtcp_reduced_size: self.rtcp_reduced_size,
         }
     }
 
-    /// https://rtcweb-wg.github.io/jsep/#rfc.section.5.8
+    /// <https://rtcweb-wg.github.io/jsep/#rfc.section.5.8>
     pub fn from_sdp(sdp: &sdp::MediaDescription) -> Result<Self, String> {
         let mid = sdp.attributes.get::<Mid>().ok_or("mid is required")?.0.clone();
 
