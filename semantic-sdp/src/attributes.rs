@@ -743,6 +743,9 @@ declare_property_sdp_attribute!("rtcp-rsize", RtcpReducedSize);
 // RFC 5761
 declare_property_sdp_attribute!("rtcp-mux", RtcpMux);
 
+// ietf-mmusic-mux-exclusive
+declare_property_sdp_attribute!("rtcp-mux-only", RtcpMuxOnly);
+
 // RFC 8285
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ExtensionMap {

@@ -9,8 +9,9 @@ use ordered_multimap::ListOrderedMultimap;
 use rand::Rng;
 
 use crate::attributes::{
-    Candidate, ExtensionMap, Fingerprint, FormatParameters, Group, IceLite, IceOptions, IcePwd, IceUfrag, Inactive,
-    Mid, ReceiveOnly, Rid, Rtcp, RtcpFeedback, RtcpMux, RtpMap, SendOnly, SendReceive, Setup, SsrcAttribute, SsrcGroup,
+    Candidate, ExtensionMap, ExtensionMapAllowMixed, Fingerprint, FormatParameters, Group, IceLite, IceOptions, IcePwd,
+    IceUfrag, Inactive, Mid, ReceiveOnly, Rid, Rtcp, RtcpFeedback, RtcpMux, RtcpMuxOnly, RtcpReducedSize, RtpMap,
+    SendOnly, SendReceive, Setup, SsrcAttribute, SsrcGroup,
 };
 use crate::enums::{
     AddressType, BandwidthType, FingerprintHashFunction, GroupSemantics, IceOption, MediaType, NetworkType,
@@ -39,6 +40,8 @@ pub struct UnifiedBundleSession {
     pub fingerprints: ListOrderedMultimap<FingerprintHashFunction, CertificateFingerprint>,
     pub setup_role: SetupRole,
 
+    pub allow_mixed_extension_maps: bool,
+
     // TODO: Support non-RTP media
     pub media_descriptions: Vec<RtpMediaDescription>,
 }
@@ -59,6 +62,7 @@ impl UnifiedBundleSession {
             candidates: Vec::new(),
             fingerprints: ListOrderedMultimap::new(),
             setup_role: SetupRole::ActivePassive,
+            allow_mixed_extension_maps: true,
             media_descriptions: Vec::new(),
         }
     }
@@ -70,13 +74,14 @@ impl UnifiedBundleSession {
         UnifiedBundleSession {
             id: rng.gen_range(0, 9_223_372_036_854_775_807),
             version: 1,
-            ice_lite: true,
+            ice_lite: false,
             ice_ufrag: rng.sample_iter(Alphanumeric).take(8).collect(),
             ice_pwd: rng.sample_iter(Alphanumeric).take(24).collect(),
             ice_options: HashSet::new(),
             candidates: Vec::new(),
             fingerprints: ListOrderedMultimap::new(),
             setup_role: self.setup_role.reverse(),
+            allow_mixed_extension_maps: self.allow_mixed_extension_maps,
             media_descriptions: self.media_descriptions.iter().map(|md| md.answer()).collect(),
         }
     }
@@ -138,6 +143,12 @@ impl UnifiedBundleSession {
             .map(|a| a.0.clone())
             .unwrap_or(SetupRole::ActivePassive);
 
+        let allow_mixed_extension_maps = first_media_description
+            .attributes
+            .get::<ExtensionMapAllowMixed>()
+            .or_else(|| sdp.attributes.get())
+            .is_some();
+
         let media_descriptions = sdp
             .media_descriptions
             .iter()
@@ -154,6 +165,7 @@ impl UnifiedBundleSession {
             candidates,
             fingerprints,
             setup_role,
+            allow_mixed_extension_maps,
             media_descriptions,
         };
 
@@ -172,9 +184,13 @@ impl UnifiedBundleSession {
                 semantics: GroupSemantics::Bundle,
                 mids: self.media_descriptions.iter().map(|md| md.mid.clone()).collect(),
             });
+
+            // TODO: msid-semantic ?
         }
 
-        // TODO: msid-semantic ?
+        if self.allow_mixed_extension_maps {
+            attributes.append(ExtensionMapAllowMixed);
+        }
 
         let media_descriptions = self.media_descriptions.iter().map(|md| md.to_sdp(self)).collect();
 
@@ -283,7 +299,10 @@ pub struct RtpMediaDescription {
     pub encodings: Vec<RtpEncoding>,
 
     pub extensions: HashMap<String, u16>,
-    // rtcp-mux?, rtcp-mux-only?, rtcp-rsize?
+
+    pub rtcp_mux: bool,
+    pub rtcp_mux_only: bool,
+    pub rtcp_reduced_size: bool,
     // msid, imageattr, simulcast
 }
 
@@ -398,6 +417,9 @@ impl RtpMediaDescription {
             direction: self.direction.reverse(),
             encodings,
             extensions,
+            rtcp_mux: self.rtcp_mux,
+            rtcp_mux_only: self.rtcp_mux_only,
+            rtcp_reduced_size: self.rtcp_reduced_size,
         }
     }
 
@@ -505,6 +527,10 @@ impl RtpMediaDescription {
             _ => return Err("Multiple direction attributes found in m-line".to_owned()),
         };
 
+        let rtcp_mux = sdp.attributes.get::<RtcpMux>().is_some();
+        let rtcp_mux_only = sdp.attributes.get::<RtcpMuxOnly>().is_some();
+        let rtcp_reduced_size = sdp.attributes.get::<RtcpReducedSize>().is_some();
+
         let mut encodings = Vec::new();
 
         // TODO: Right now we ignore the simulcast attribute and just assume all RIDs are simulcast.
@@ -594,6 +620,9 @@ impl RtpMediaDescription {
             direction,
             encodings,
             extensions,
+            rtcp_mux,
+            rtcp_mux_only,
+            rtcp_reduced_size,
         };
 
         Ok(media_description)
@@ -649,9 +678,17 @@ impl RtpMediaDescription {
 
         // TODO: msid ?
 
-        attributes.append(RtcpMux);
+        if self.rtcp_mux {
+            attributes.append(RtcpMux);
+        }
 
-        // TODO: rtcp-rsize?
+        if self.rtcp_mux_only {
+            attributes.append(RtcpMuxOnly);
+        }
+
+        if self.rtcp_reduced_size {
+            attributes.append(RtcpReducedSize);
+        }
 
         let mut formats = Vec::new();
 
@@ -719,6 +756,8 @@ impl RtpMediaDescription {
                         name: "cname".to_owned(),
                         value: Some(cname.clone()),
                     });
+
+                    // TODO: We should add the msid / label / mslabel attributes at some point.
 
                     if let Some(rtx_ssrc) = rtx_ssrc {
                         attributes.append(SsrcAttribute {
