@@ -1,0 +1,12 @@
+{
+  "name": "media-server-demo",
+  "version": "0.1.0",
+  "main": "main.js",
+  "author": "Asher Baker <asherkin@limetech.io>",
+  "dependencies": {
+    "express": "^4.17.1",
+    "medooze-media-server": "^0.99.0",
+    "semantic-sdp": "^3.21.0",
+    "ws": "^7.4.1"
+  }
+}
