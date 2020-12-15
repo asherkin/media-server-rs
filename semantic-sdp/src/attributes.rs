@@ -45,6 +45,7 @@ where
         Rtcp::NAME => Rtcp::parse_boxed(input),
         RtcpFeedback::NAME => RtcpFeedback::parse_boxed(input),
         RtcpMux::NAME => RtcpMux::parse_boxed(input),
+        RtcpMuxOnly::NAME => RtcpMuxOnly::parse_boxed(input),
         RtcpReducedSize::NAME => RtcpReducedSize::parse_boxed(input),
         RtpMap::NAME => RtpMap::parse_boxed(input),
         SendOnly::NAME => SendOnly::parse_boxed(input),
@@ -887,8 +888,14 @@ impl ParsableAttribute for MediaStreamIdSemantic {
     }
 
     fn to_string(&self) -> Option<String> {
+        let msids = if !self.msids.is_empty() {
+            format!(" {}", self.msids.join(" "))
+        } else {
+            "".to_owned()
+        };
+
         // The extra space before the semantic seems to be expected by most implementations.
-        Some(format!(" {} {}", self.semantic, self.msids.join(" ")))
+        Some(format!(" {}{}", self.semantic, msids))
     }
 }
 

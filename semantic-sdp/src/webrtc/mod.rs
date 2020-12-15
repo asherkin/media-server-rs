@@ -10,8 +10,8 @@ use rand::Rng;
 
 use crate::attributes::{
     Candidate, ExtensionMap, ExtensionMapAllowMixed, Fingerprint, FormatParameters, Group, IceLite, IceOptions, IcePwd,
-    IceUfrag, Inactive, Mid, ReceiveOnly, Rid, Rtcp, RtcpFeedback, RtcpMux, RtcpMuxOnly, RtcpReducedSize, RtpMap,
-    SendOnly, SendReceive, Setup, SsrcAttribute, SsrcGroup,
+    IceUfrag, Inactive, MediaStreamId, MediaStreamIdSemantic, Mid, ReceiveOnly, Rid, Rtcp, RtcpFeedback, RtcpMux,
+    RtcpMuxOnly, RtcpReducedSize, RtpMap, SendOnly, SendReceive, Setup, SsrcAttribute, SsrcGroup,
 };
 use crate::enums::{
     AddressType, BandwidthType, FingerprintHashFunction, GroupSemantics, IceOption, MediaType, NetworkType,
@@ -41,6 +41,7 @@ pub struct UnifiedBundleSession {
     pub setup_role: SetupRole,
 
     pub allow_mixed_extension_maps: bool,
+    pub include_msid_semantic: bool,
 
     // TODO: Support non-RTP media
     pub media_descriptions: Vec<RtpMediaDescription>,
@@ -63,6 +64,7 @@ impl UnifiedBundleSession {
             fingerprints: ListOrderedMultimap::new(),
             setup_role: SetupRole::ActivePassive,
             allow_mixed_extension_maps: true,
+            include_msid_semantic: true,
             media_descriptions: Vec::new(),
         }
     }
@@ -82,6 +84,7 @@ impl UnifiedBundleSession {
             fingerprints: ListOrderedMultimap::new(),
             setup_role: self.setup_role.reverse(),
             allow_mixed_extension_maps: self.allow_mixed_extension_maps,
+            include_msid_semantic: self.include_msid_semantic,
             media_descriptions: self.media_descriptions.iter().map(|md| md.answer()).collect(),
         }
     }
@@ -89,6 +92,8 @@ impl UnifiedBundleSession {
     /// <https://rtcweb-wg.github.io/jsep/#rfc.section.5.8>
     pub fn from_sdp(sdp: &sdp::Session) -> Result<Self, String> {
         let ice_lite = sdp.attributes.get::<IceLite>().is_some();
+
+        let include_msid_semantic = sdp.attributes.get::<MediaStreamIdSemantic>().is_some();
 
         // Get ICE and DTLS info from the first m-line.
         // TODO: We're lazy and just assume max-bundle if this struct is being used.
@@ -166,6 +171,7 @@ impl UnifiedBundleSession {
             fingerprints,
             setup_role,
             allow_mixed_extension_maps,
+            include_msid_semantic,
             media_descriptions,
         };
 
@@ -184,12 +190,23 @@ impl UnifiedBundleSession {
                 semantics: GroupSemantics::Bundle,
                 mids: self.media_descriptions.iter().map(|md| md.mid.clone()).collect(),
             });
-
-            // TODO: msid-semantic ?
         }
 
         if self.allow_mixed_extension_maps {
             attributes.append(ExtensionMapAllowMixed);
+        }
+
+        if self.include_msid_semantic {
+            attributes.append(MediaStreamIdSemantic {
+                semantic: "WMS".to_owned(),
+                msids: self
+                    .media_descriptions
+                    .iter()
+                    .filter_map(|md| md.stream_id.clone())
+                    .collect::<HashSet<_>>()
+                    .into_iter()
+                    .collect(),
+            });
         }
 
         let media_descriptions = self.media_descriptions.iter().map(|md| md.to_sdp(self)).collect();
@@ -300,10 +317,13 @@ pub struct RtpMediaDescription {
 
     pub extensions: HashMap<String, u16>,
 
+    pub stream_id: Option<String>,
+    pub track_id: Option<String>,
+
     pub rtcp_mux: bool,
     pub rtcp_mux_only: bool,
     pub rtcp_reduced_size: bool,
-    // msid, imageattr, simulcast
+    // imageattr, simulcast
 }
 
 impl RtpMediaDescription {
@@ -330,6 +350,8 @@ impl RtpMediaDescription {
             direction: self.direction.reverse(),
             encodings,
             extensions: self.extensions.clone(),
+            stream_id: None,
+            track_id: None,
             rtcp_mux: self.rtcp_mux,
             rtcp_mux_only: self.rtcp_mux_only,
             rtcp_reduced_size: self.rtcp_reduced_size,
@@ -440,6 +462,14 @@ impl RtpMediaDescription {
             _ => return Err("Multiple direction attributes found in m-line".to_owned()),
         };
 
+        let (stream_id, track_id) = match sdp.attributes.get::<MediaStreamId>() {
+            Some(msid) => (
+                if msid.id == "-" { None } else { Some(msid.id.clone()) },
+                msid.appdata.clone(),
+            ),
+            None => (None, None),
+        };
+
         let rtcp_mux = sdp.attributes.get::<RtcpMux>().is_some();
         let rtcp_mux_only = sdp.attributes.get::<RtcpMuxOnly>().is_some();
         let rtcp_reduced_size = sdp.attributes.get::<RtcpReducedSize>().is_some();
@@ -533,6 +563,8 @@ impl RtpMediaDescription {
             direction,
             encodings,
             extensions,
+            stream_id,
+            track_id,
             rtcp_mux,
             rtcp_mux_only,
             rtcp_reduced_size,
@@ -589,7 +621,13 @@ impl RtpMediaDescription {
             MediaDirection::Inactive => attributes.append(Inactive),
         }
 
-        // TODO: msid ?
+        if self.stream_id.is_some() || self.track_id.is_some() {
+            let stream_id = self.stream_id.as_deref().unwrap_or("-");
+            attributes.append(MediaStreamId {
+                id: stream_id.to_owned(),
+                appdata: self.track_id.clone(),
+            });
+        }
 
         if self.rtcp_mux {
             attributes.append(RtcpMux);
@@ -670,7 +708,33 @@ impl RtpMediaDescription {
                         value: Some(cname.clone()),
                     });
 
-                    // TODO: We should add the msid / label / mslabel attributes at some point.
+                    if self.stream_id.is_some() || self.track_id.is_some() {
+                        let stream_id = self.stream_id.as_deref().unwrap_or("-");
+                        let mut msid_value = stream_id.to_owned();
+                        if let Some(track_id) = &self.track_id {
+                            msid_value += &format!(" {}", track_id);
+                        }
+
+                        attributes.append(SsrcAttribute {
+                            ssrc: *ssrc,
+                            name: "msid".to_owned(),
+                            value: Some(msid_value.clone()),
+                        });
+
+                        attributes.append(SsrcAttribute {
+                            ssrc: *ssrc,
+                            name: "mslabel".to_owned(),
+                            value: Some(stream_id.to_owned()),
+                        });
+
+                        if let Some(track_id) = &self.track_id {
+                            attributes.append(SsrcAttribute {
+                                ssrc: *ssrc,
+                                name: "label".to_owned(),
+                                value: Some(track_id.to_owned()),
+                            });
+                        }
+                    }
 
                     if let Some(rtx_ssrc) = rtx_ssrc {
                         attributes.append(SsrcAttribute {
@@ -678,6 +742,34 @@ impl RtpMediaDescription {
                             name: "cname".to_owned(),
                             value: Some(cname.clone()),
                         });
+
+                        if self.stream_id.is_some() || self.track_id.is_some() {
+                            let stream_id = self.stream_id.as_deref().unwrap_or("-");
+                            let mut msid_value = stream_id.to_owned();
+                            if let Some(track_id) = &self.track_id {
+                                msid_value += &format!(" {}", track_id);
+                            }
+
+                            attributes.append(SsrcAttribute {
+                                ssrc: *rtx_ssrc,
+                                name: "msid".to_owned(),
+                                value: Some(msid_value.clone()),
+                            });
+
+                            attributes.append(SsrcAttribute {
+                                ssrc: *rtx_ssrc,
+                                name: "mslabel".to_owned(),
+                                value: Some(stream_id.to_owned()),
+                            });
+
+                            if let Some(track_id) = &self.track_id {
+                                attributes.append(SsrcAttribute {
+                                    ssrc: *rtx_ssrc,
+                                    name: "label".to_owned(),
+                                    value: Some(track_id.to_owned()),
+                                });
+                            }
+                        }
 
                         // TODO: Firefox doesn't appear to include a ssrc-group?
                         attributes.append(SsrcGroup {
