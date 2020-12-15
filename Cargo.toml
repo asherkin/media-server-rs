@@ -1,8 +1,8 @@
 [workspace]
 members = [
+    "demo",
     "media-server",
     "media-server-sys",
     "semantic-sdp",
     "semantic-sdp-derive",
-    "sfu",
 ]

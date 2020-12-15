@@ -353,7 +353,7 @@ async fn main() {
             warp::reply::with_header(favicon.as_ref(), "Content-Type", "image/vnd.microsoft.icon")
         });
 
-    let routes = websocket.or(index).or(adapter).or(favicon).with(warp::log("sfu::http"));
+    let routes = websocket.or(index).or(adapter).or(favicon).with(warp::log("media_server_demo::http"));
 
     warp::serve(routes).run(([127, 0, 0, 1], 8080)).await;
 }

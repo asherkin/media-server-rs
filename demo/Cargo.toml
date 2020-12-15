@@ -1,5 +1,5 @@
 [package]
-name = "sfu"
+name = "media-server-demo"
 version = "0.1.0"
 authors = ["Asher Baker <asherkin@limetech.io>"]
 edition = "2018"
