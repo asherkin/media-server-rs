@@ -1,11 +1,19 @@
 use std::error::Error;
+use std::str::FromStr;
 
 use futures::prelude::*;
 use serde::{Deserialize, Serialize};
 use warp::ws::Message;
 use warp::Filter;
 
-use media_server::sdp::webrtc::UnifiedBundleSession;
+use media_server::sdp::attributes::Candidate;
+use media_server::sdp::enums::{FingerprintHashFunction, IceCandidateType, IceTransportType, MediaType, RtpCodecName};
+use media_server::sdp::types::CertificateFingerprint;
+use media_server::sdp::webrtc::{RtpEncoding, RtpMediaDescription, UnifiedBundleSession};
+use media_server::{
+    DtlsConnectionHash, LoggingLevel, MediaFrameType, Properties, RtpBundleTransport, RtpBundleTransportConnection,
+    RtpIncomingSourceGroup,
+};
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
@@ -35,23 +43,243 @@ async fn send_message(websocket: &mut warp::ws::WebSocket, message: &S2CMessage)
     Ok(())
 }
 
-async fn handle_offer(websocket: &mut warp::ws::WebSocket, offer: &UnifiedBundleSession) -> Result<(), Box<dyn Error>> {
+fn add_rtp_properties_from_media_description(properties: &mut Properties, media_description: &RtpMediaDescription) {
+    let kind = &media_description.kind;
+
+    for (i, payload) in media_description.payloads.iter().enumerate() {
+        properties.set_string(&format!("{}.codecs.{}.codec", kind, i), payload.name.as_ref());
+        properties.set_int(&format!("{}.codecs.{}.pt", kind, i), payload.payload_type.0 as i32);
+
+        if let Some(rtx_payload_type) = payload.rtx_payload_type {
+            properties.set_int(&format!("{}.codecs.{}.rtx", kind, i), rtx_payload_type.0 as i32);
+        }
+    }
+
+    properties.set_int(
+        &format!("{}.codecs.length", kind),
+        media_description.payloads.len() as i32,
+    );
+
+    for (i, (uri, id)) in media_description.extensions.iter().enumerate() {
+        properties.set_int(&format!("{}.ext.{}.id", kind, i), *id as i32);
+        properties.set_string(&format!("{}.ext.{}.uri", kind, i), uri);
+    }
+
+    properties.set_int(
+        &format!("{}.ext.length", kind),
+        media_description.extensions.len() as i32,
+    );
+}
+
+fn get_rtp_properties_from_sdp(sdp: &UnifiedBundleSession) -> Properties {
+    let mut properties = Properties::new();
+
+    let first_audio_media = sdp.media_descriptions.iter().find(|md| md.kind == MediaType::Audio);
+
+    if let Some(media_description) = first_audio_media {
+        add_rtp_properties_from_media_description(&mut properties, media_description);
+    }
+
+    let first_video_media = sdp.media_descriptions.iter().find(|md| md.kind == MediaType::Video);
+
+    if let Some(media_description) = first_video_media {
+        add_rtp_properties_from_media_description(&mut properties, media_description);
+    }
+
+    properties
+}
+
+/// Filters the codecs, rtcp feedbacks, and extensions in the SDP according to
+/// the media-server capabilities.
+fn filter_answer_to_capabilities(sdp: &mut UnifiedBundleSession) {
+    for media_description in &mut sdp.media_descriptions {
+        let kind = media_description.kind.clone();
+
+        media_description.payloads.retain(|payload| match kind {
+            MediaType::Audio => match payload.name {
+                RtpCodecName::Opus => true,
+                RtpCodecName::Pcmu => true,
+                RtpCodecName::Pcma => true,
+                _ => false,
+            },
+            MediaType::Video => match payload.name {
+                RtpCodecName::Vp8 => true,
+                RtpCodecName::Vp9 => true,
+                RtpCodecName::H264 => match payload.parameters.get("packetization-mode") {
+                    Some(mode) => mode == "1",
+                    None => false,
+                },
+                _ => false,
+            },
+            _ => false,
+        });
+
+        for payload in &mut media_description.payloads {
+            payload.supported_feedback.retain(|id, param| match kind {
+                MediaType::Video => match (id.as_str(), param.as_deref()) {
+                    ("goog-remb", None) => true,
+                    ("transport-cc", None) => true,
+                    ("ccm", Some("fir")) => true,
+                    ("nack", None) => true,
+                    ("nack", Some("pli")) => true,
+                    _ => false,
+                },
+                _ => false,
+            });
+        }
+
+        media_description.extensions.retain(|uri, _id| match kind {
+            MediaType::Audio => match uri.as_str() {
+                "urn:ietf:params:rtp-hdrext:ssrc-audio-level" => true,
+                "urn:ietf:params:rtp-hdrext:sdes:mid" => true,
+                "urn:ietf:params:rtp-hdrext:sdes:rtp-stream-id" => true,
+                "http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time" => true,
+                _ => false,
+            },
+            MediaType::Video => match uri.as_str() {
+                "urn:3gpp:video-orientation" => true,
+                "http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01" => true,
+                "urn:ietf:params:rtp-hdrext:sdes:mid" => true,
+                "urn:ietf:params:rtp-hdrext:sdes:rtp-stream-id" => true,
+                "urn:ietf:params:rtp-hdrext:sdes:repaired-rtp-stream-id" => true,
+                "http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time" => true,
+                _ => false,
+            },
+            _ => false,
+        });
+    }
+}
+
+#[allow(dead_code)]
+struct ActiveSession {
+    transport: RtpBundleTransport,
+    connection: RtpBundleTransportConnection,
+    incoming_source_groups: Vec<RtpIncomingSourceGroup>,
+}
+
+async fn handle_offer(
+    websocket: &mut warp::ws::WebSocket,
+    offer: &UnifiedBundleSession,
+) -> Result<ActiveSession, Box<dyn Error>> {
     // TODO: We want to implement something along the lines of the
     //       media-server-node manual signalling example in here.
     //       https://github.com/medooze/media-server-node/blob/master/manual.md
 
-    // let answer = offer.answer();
+    // TODO: We haven't implemented the higher-level Endpoint / Transport APIs in media-server yet,
+    //       so we're just gonna use the raw native API to get something running here,
+    //       and use it to guide implementation of those APIs later.
 
-    // TODO: Just ping back the offer for now.
-    //       Can't even do that yet, needs Session::to_sdp implemented.
-    // let answer = Clone::clone(offer);
+    // TODO: We shouldn't be creating one RtpBundleTransport (Endpoint) per connection.
+    let transport = RtpBundleTransport::new(None)?;
 
-    // send_message(websocket, &S2CMessage::Answer { sdp: answer }).await?;
+    // This will generate a new ice ufrag/pwd,
+    // we need to add our ICE candidates and DTLS fingerprint.
+    let mut answer = offer.answer();
 
-    Ok(())
+    filter_answer_to_capabilities(&mut answer);
+
+    answer.ice_lite = true;
+
+    answer.candidates.push(Candidate {
+        foundation: "1".to_owned(),
+        component: 1,
+        transport: IceTransportType::Udp,
+        priority: (2u32.pow(24) * 126) + (2u32.pow(8) * (65535 - 1)) + 255,
+        address: "127.0.0.1".to_owned(),
+        port: transport.get_local_port(),
+        kind: IceCandidateType::Host,
+        rel_addr: None,
+        rel_port: None,
+        unknown: Default::default(),
+        tcp_type: None,
+    });
+
+    // TODO: media_server::get_certificate_fingerprint should probably return these in the right type already
+    let our_fingerprint = media_server::get_certificate_fingerprint(DtlsConnectionHash::Sha256)?;
+    answer.fingerprints.append(
+        FingerprintHashFunction::Sha256,
+        CertificateFingerprint::from_str(&our_fingerprint)?,
+    );
+
+    let offer_fingerprint = offer
+        .fingerprints
+        .get(&FingerprintHashFunction::Sha256)
+        .ok_or("sha-256 dtls fingerprint missing from offer")?;
+
+    let properties = Properties::new();
+    properties.set_string("ice.localUsername", &answer.ice_ufrag);
+    properties.set_string("ice.localPassword", &answer.ice_pwd);
+    properties.set_string("ice.remoteUsername", &offer.ice_ufrag);
+    properties.set_string("ice.remotePassword", &offer.ice_pwd);
+    properties.set_string("dtls.setup", offer.setup_role.as_ref());
+    properties.set_string("dtls.hash", "SHA-256");
+    properties.set_string("dtls.fingerprint", &offer_fingerprint.to_string());
+    properties.set_bool("disableSTUNKeepAlive", false);
+    properties.set_string("srtpProtectionProfiles", "");
+
+    let username = answer.ice_ufrag.clone() + ":" + &offer.ice_ufrag;
+    let connection = transport.add_ice_transport(username.as_str(), &properties)?;
+
+    let remote_properties = get_rtp_properties_from_sdp(offer);
+    connection.set_remote_properties(&remote_properties);
+
+    let local_properties = get_rtp_properties_from_sdp(&answer);
+    connection.set_local_properties(&local_properties);
+
+    let mut incoming_source_groups = Vec::new();
+
+    // TODO: We've got a weird bug here where media-server isn't matching up the RTX
+    //       packets with an encoding - both the MID and RID headers seems to be missing.
+    //       Need to test with media-server-node.
+    //       This still happens with media-server-node, the issue appears to be Chrome
+    //       not sending MID/RID in RTCP packets when doing simulcast and the matching
+    //       encoding is not currently active. Doesn't look like there is anything to do
+    //       and it recovers happily once all of the encodings become active.
+
+    for media_description in &offer.media_descriptions {
+        let frame_type = match media_description.kind {
+            MediaType::Audio => MediaFrameType::Audio,
+            MediaType::Video => MediaFrameType::Video,
+            _ => continue,
+        };
+
+        for encoding in &media_description.encodings {
+            let incoming_source_group = match encoding {
+                RtpEncoding::Rid { rid, .. } => connection.add_incoming_source_group(
+                    frame_type,
+                    Some(&media_description.mid.0),
+                    Some(&rid.0),
+                    None,
+                    None,
+                )?,
+                RtpEncoding::SendingSsrc { ssrc, rtx_ssrc, .. } => connection.add_incoming_source_group(
+                    frame_type,
+                    Some(&media_description.mid.0),
+                    None,
+                    Some(ssrc.0),
+                    rtx_ssrc.map(|s| s.0),
+                )?,
+            };
+
+            incoming_source_groups.push(incoming_source_group);
+        }
+    }
+
+    // TODO: Mirror back the tracks?
+
+    send_message(websocket, &S2CMessage::Answer { sdp: answer }).await?;
+
+    Ok(ActiveSession {
+        transport,
+        connection,
+        incoming_source_groups,
+    })
 }
 
 async fn on_websocket_upgrade(mut websocket: warp::ws::WebSocket) {
+    // Stores the media-server objects for the current websocket
+    let mut session = None;
+
     while let Ok(Some(message)) = websocket.try_next().await {
         if message.is_close() {
             log::info!("client closed websocket");
@@ -81,18 +309,23 @@ async fn on_websocket_upgrade(mut websocket: warp::ws::WebSocket) {
 
         match parsed {
             C2SMessage::Offer { sdp } => {
-                if let Err(e) = handle_offer(&mut websocket, &sdp).await {
-                    log::warn!("failed to handle offer: {}", e);
-                    return;
-                }
+                match handle_offer(&mut websocket, &sdp).await {
+                    Ok(new_session) => session.replace(new_session),
+                    Err(e) => {
+                        log::warn!("failed to handle offer: {}", e);
+                        return;
+                    }
+                };
             }
-        }
+        };
     }
 }
 
 #[tokio::main]
 async fn main() {
     pretty_env_logger::init();
+
+    media_server::library_init(LoggingLevel::Debug).unwrap();
 
     let websocket = warp::get()
         .and(warp::path::path("ws"))

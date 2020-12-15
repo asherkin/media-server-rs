@@ -5,124 +5,353 @@
     <title>media-server-rs</title>
 </head>
 <body>
-    <div style="width: fit-content; margin: 0 auto;">
-        <div style="width: 384px; height: 216px; background: black; margin: 1em 0;">
-            <video id="local-video" muted autoplay playsinline style="width: 100%; height: 100%;"></video>
-        </div>
-        <div style="margin: 1em 0;">
-            <label>
-                Simulcast:
-                <select id="simulcast">
-                    <option value="0">Disabled</option>
-                    <option value="1">x1</option>
-                    <option value="2">x2</option>
-                    <option value="3">x3</option>
-                </select>
-            </label>
-        </div>
-        <button id="start-button" type="button" style="width: 100%;">Start</button>
+<div style="width: fit-content; margin: 0 auto;">
+    <div style="width: 384px; height: 216px; background: black; margin: 1em 0;">
+        <video autoplay id="local-video" muted playsinline style="width: 100%; height: 100%;"></video>
     </div>
+    <div style="margin: 1em 0;">
+        <label>
+            Simulcast:
+            <select id="simulcast">
+                <option value="0">Disabled</option>
+                <option value="1">x1</option>
+                <option value="2">x2</option>
+                <option value="3">x3</option>
+            </select>
+        </label>
+    </div>
+    <button id="start-button" style="width: 100%;" type="button">Start</button>
+    <textarea id="stats"
+              style="margin: 1em 0; display: block; width: 100%; height: 200px; white-space: pre;"></textarea>
+</div>
 
-    <script src="adapter.js"></script>
-    <script>
-        const localVideo = /** @type {HTMLVideoElement} */ document.getElementById("local-video");
-        const startButton = /** @type {HTMLButtonElement} */ document.getElementById("start-button");
-        const simulcastSelect = /** @type {HTMLSelectElement} */ document.getElementById('simulcast');
+<script src="adapter.js"></script>
+<script>
+    const localVideo = /** @type {HTMLVideoElement} */ document.getElementById("local-video");
+    const simulcastSelect = /** @type {HTMLSelectElement} */ document.getElementById('simulcast');
+    const startButton = /** @type {HTMLButtonElement} */ document.getElementById("start-button");
+    const statsTextarea = /** @type {HTMLTextAreaElement} */ document.getElementById('stats');
 
-        /**
-         * @returns {Promise<WebSocket>}
-         */
-        function setupWebSocket() {
-            return new Promise((resolve, reject) => {
-                const url = `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}/ws`;
-                const webSocket = new WebSocket(url);
+    /**
+     * @returns {Promise<WebSocket>}
+     */
+    function setupWebSocket() {
+        return new Promise((resolve, reject) => {
+            const url = `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}/ws`;
+            const webSocket = new WebSocket(url);
 
-                webSocket.addEventListener("open", () => {
-                    console.log("WebSocket opened");
+            webSocket.addEventListener("open", () => {
+                console.log("WebSocket opened");
 
-                    resolve(webSocket);
-                });
-
-                webSocket.addEventListener("error", (ev) => {
-                    reject(ev);
-                })
-
-                webSocket.addEventListener("close", () => {
-                    console.log("WebSocket closed");
-                });
-
-                webSocket.addEventListener("message", (ev) => {
-                    console.log("WebSocket message:", ev.data);
-                });
+                resolve(webSocket);
             });
-        }
 
-        /**
-         * @param {WebSocket} webSocket
-         * @param {MediaStream} userMedia
-         * @returns {Promise<void>}
-         */
-        async function setupPeerConnection(webSocket, userMedia) {
-            const peerConnection = new RTCPeerConnection({
-                sdpSemantics: "unified-plan",
-                bundlePolicy: "max-bundle",
-                rtcpMuxPolicy: "require",
+            webSocket.addEventListener("error", (ev) => {
+                reject(ev);
+            })
+
+            webSocket.addEventListener("close", () => {
+                console.log("WebSocket closed");
             });
 
             webSocket.addEventListener("message", (ev) => {
-                const message = JSON.parse(ev.data);
-
-                if (message.type === "xxx") {
-                    return;
-                }
-
-                console.warn("unknown message type:", message);
+                console.log("WebSocket message:", ev.data);
             });
+        });
+    }
 
-            for (let track of userMedia.getTracks()) {
-                const config = {
-                    direction: "sendonly",
-                };
+    /**
+     * @param {WebSocket} webSocket
+     * @param {MediaStream} userMedia
+     * @returns {Promise<void>}
+     */
+    async function setupPeerConnection(webSocket, userMedia) {
+        const peerConnection = new RTCPeerConnection({
+            sdpSemantics: "unified-plan",
+            bundlePolicy: "max-bundle",
+            rtcpMuxPolicy: "require",
+            // https://www.chromestatus.com/feature/6269234631933952
+            offerExtmapAllowMixed: true,
+        });
 
-                if (track.kind === "video" && simulcastSelect.value > 0) {
-                    config.sendEncodings = [
-                        { rid: 'f' },
-                        { rid: 'h', scaleResolutionDownBy: 2 },
-                        { rid: 'q', scaleResolutionDownBy: 4 },
-                    ].slice(0, +simulcastSelect.value);
-                }
+        webSocket.addEventListener("message", async (ev) => {
+            const message = JSON.parse(ev.data);
 
-                peerConnection.addTransceiver(track, config);
+            if (message.type === "answer") {
+                console.log(message.sdp);
+
+                await peerConnection.setRemoteDescription(message);
+
+                return;
             }
 
-            const offer = await peerConnection.createOffer();
+            console.warn("unknown message type:", message);
+        });
 
-            console.log(offer.sdp);
+        const statsTracks = [];
 
-            webSocket.send(JSON.stringify(offer));
+        for (let track of userMedia.getTracks()) {
+            statsTracks.push(track);
+
+            /** @type {RTCRtpTransceiverInit} */
+            const config = {
+                direction: "sendonly",
+                streams: [userMedia],
+            };
+
+            if (track.kind === "video" && simulcastSelect.value > 0) {
+                config.sendEncodings = [
+                    {rid: 'q', scaleResolutionDownBy: 4},
+                    {rid: 'h', scaleResolutionDownBy: 2},
+                    {rid: 'f'},
+                ].slice(3 - simulcastSelect.value);
+            }
+
+            peerConnection.addTransceiver(track, config);
         }
 
-        startButton.addEventListener("click", async () => {
-            startButton.disabled = true;
+        startStatsGathering(peerConnection, statsTracks);
 
-            const userMediaPromise = navigator.mediaDevices.getUserMedia({
-                video: {
-                    width: 720,
-                },
-                audio: true,
-            }).then((userMedia) => {
-                localVideo.srcObject = userMedia;
+        const offer = await peerConnection.createOffer();
 
-                return userMedia;
-            });
+        console.log(offer.sdp);
 
-            const [webSocket, userMedia] = await Promise.all([
-                setupWebSocket(),
-                userMediaPromise,
-            ]);
+        await peerConnection.setLocalDescription(offer);
 
-            await setupPeerConnection(webSocket, userMedia);
+        webSocket.send(JSON.stringify(offer));
+    }
+
+    startButton.addEventListener("click", async () => {
+        startButton.disabled = true;
+
+        const userMediaPromise = navigator.mediaDevices.getUserMedia({
+            video: {
+                width: 1280,
+                frameRate: 30,
+            },
+            audio: true,
+        }).then((userMedia) => {
+            localVideo.srcObject = userMedia;
+
+            return userMedia;
         });
-    </script>
+
+        const [webSocket, userMedia] = await Promise.all([
+            setupWebSocket(),
+            userMediaPromise,
+        ]);
+
+        await setupPeerConnection(webSocket, userMedia);
+    });
+
+    function formatBytes(bytes, rate, decimals) {
+        if (typeof decimals === 'undefined') {
+            decimals = 2;
+        }
+
+        var k = 1024;
+        var dm = decimals < 0 ? 0 : decimals;
+        var sizes = rate
+            ? ['bps', 'kbps', 'Mbps', 'Gbps', 'Tbps']
+            : ['bytes', 'KB', 'MB', 'GB', 'TB'];
+
+        if (bytes === 0) {
+            return '0 ' + sizes[0];
+        }
+
+        if (rate) {
+            bytes *= 8;
+        }
+
+        var i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+    }
+
+    /**
+     * @param {RTCPeerConnection} peerConnection
+     * @param {MediaStreamTrack[]} tracks
+     */
+    function startStatsGathering(peerConnection, tracks) {
+        const lastTrackStats = {};
+
+        async function gatherStats() {
+            let statsText = '';
+
+            for (let i = 0; i < tracks.length; ++i) {
+                const track = tracks[i];
+                const stats = await peerConnection.getStats(track);
+
+                if (!lastTrackStats[track.id]) {
+                    lastTrackStats[track.id] = stats;
+
+                    continue;
+                }
+
+                const lastStats = lastTrackStats[track.id];
+
+                if (i === 0) {
+                    stats.forEach(v => {
+                        if (v.type !== 'candidate-pair' || v.nominated !== true) {
+                            return;
+                        }
+
+                        const lv = stats.get(v.localCandidateId);
+                        statsText += 'Local: ' + (lv.address || lv.ip) + ':' + lv.port + ' (' + (lv.networkType || 'unknown') + ') (' + lv.candidateType + ') (' + lv.protocol + ')\n';
+
+                        const rv = stats.get(v.remoteCandidateId);
+                        statsText += 'Remote: ' + (rv.address || rv.ip) + ':' + rv.port + ' (' + rv.candidateType + ') (' + rv.protocol + ')\n';
+
+                        const last = lastStats.get(v.id);
+                        if (last) {
+                            // We have to convert these from bytes/ms to bytes/s, hence the x1000 multiplier.
+                            const sentRate = ((v.bytesSent - last.bytesSent) / (v.timestamp - last.timestamp)) * 1000;
+                            statsText += 'Sent: ' + formatBytes(v.bytesSent, false) + ' (' + formatBytes(sentRate, true) + ' / ' + formatBytes(v.availableOutgoingBitrate / 8, true) + ')\n';
+
+                            const receivedRate = ((v.bytesReceived - last.bytesReceived) / (v.timestamp - last.timestamp)) * 1000;
+                            statsText += 'Received: ' + formatBytes(v.bytesReceived, false) + ' (' + formatBytes(receivedRate, true) + ')\n';
+                        }
+
+                        statsText += '\n';
+                    });
+                }
+
+                const outboundStats = [];
+                let inboundStats = null;
+
+                stats.forEach(v => {
+                    // console.log(v);
+
+                    if (v.type === 'outbound-rtp') {
+                        // TODO: Hack - some browsers are missing the frameWidth / frameHeight from the RTP stats.
+                        const trackStats = stats.get(v.trackId);
+                        if (trackStats) {
+                            if (trackStats.frameWidth && !v.frameWidth) {
+                                v.frameWidth = trackStats.frameWidth;
+                            }
+
+                            if (trackStats.frameHeight && !v.frameHeight) {
+                                v.frameHeight = trackStats.frameHeight;
+                            }
+                        }
+
+                        outboundStats.push(v);
+
+                        return;
+                    }
+
+                    if (v.type === 'inbound-rtp') {
+                        inboundStats = v;
+                    }
+                });
+
+                // Sort the encodings by resolution.
+                outboundStats.sort(function (a, b) {
+                    const ar = (a.frameWidth || 0) * (a.frameHeight || 0);
+                    const br = (b.frameWidth || 0) * (b.frameHeight || 0);
+                    return br - ar;
+                });
+
+                statsText += track.kind;
+
+                if (outboundStats[0] && outboundStats[0].qualityLimitationReason && outboundStats[0].qualityLimitationReason !== 'none') {
+                    statsText += ' (' + outboundStats[0].qualityLimitationReason + ' limited)';
+                }
+
+                const codec = outboundStats[0] && stats.get(outboundStats[0].codecId);
+                if (codec) {
+                    statsText += ' (' + codec.mimeType + ')';
+                }
+
+                statsText += '\n';
+
+                outboundStats.forEach(v => {
+                    statsText += ' ';
+
+                    if (v.rid) {
+                        statsText += ' ' + v.rid;
+                    }
+
+                    const last = lastStats.get(v.id);
+
+                    if ((v.frameWidth && v.frameHeight) || (v.framesEncoded && last)) {
+                        statsText += ' (';
+
+                        if (v.frameWidth && v.frameHeight) {
+                            statsText += v.frameWidth + 'x' + v.frameHeight;
+                        }
+
+                        if (v.framesEncoded && last) {
+                            const framesPerSecond = ((v.framesEncoded - last.framesEncoded) / (v.timestamp - last.timestamp)) * 1000;
+                            statsText += '@' + framesPerSecond.toFixed(2);
+                        }
+
+                        statsText += ')';
+                    }
+
+                    if (last) {
+                        var sentRate = ((v.bytesSent - last.bytesSent) / (v.timestamp - last.timestamp)) * 1000;
+                        statsText += ' (' + formatBytes(sentRate, true) + ')';
+                    }
+
+                    if (v.qpSum && v.framesEncoded) {
+                        statsText += ' (qp: ' + (v.qpSum / v.framesEncoded).toFixed(2) + ')';
+                    }
+
+                    // TODO: There is a bug in Chrome where remoteId isn't set for all simulcast encodings.
+                    //       This also causes it to be missing from the track-filtered stats response, so we can't match it up ourselves.
+                    //       Need to switch to requesting PeerConnection-wide stats and filtering the tracks ourselves.
+                    //       Filed as https://bugs.chromium.org/p/chromium/issues/detail?id=1098266
+                    const remote = stats.get(v.remoteId);
+                    if (remote) {
+                        statsText += ' (loss: ' + ((remote.packetsLost / v.packetsSent) * 100).toFixed(2) + '%)';
+                    }
+
+                    statsText += '\n';
+                });
+
+                if (inboundStats) {
+                    statsText += ' ';
+
+                    const trackStats = stats.get(inboundStats.trackId);
+                    const last = lastStats.get(inboundStats.id);
+
+                    if ((trackStats && trackStats.frameWidth && trackStats.frameHeight) || (inboundStats.framesDecoded && last)) {
+                        statsText += ' (';
+
+                        if (trackStats && trackStats.frameWidth && trackStats.frameHeight) {
+                            statsText += trackStats.frameWidth + 'x' + trackStats.frameHeight;
+                        }
+
+                        if (inboundStats.framesDecoded && last) {
+                            var framesPerSecond = ((inboundStats.framesDecoded - last.framesDecoded) / (inboundStats.timestamp - last.timestamp)) * 1000;
+                            statsText += '@' + framesPerSecond.toFixed(2);
+                        }
+
+                        statsText += ')';
+                    }
+
+                    if (last) {
+                        const receivedRate = ((inboundStats.bytesReceived - last.bytesReceived) / (inboundStats.timestamp - last.timestamp)) * 1000;
+                        statsText += ' (' + formatBytes(receivedRate, true) + ')';
+                    }
+
+                    statsText += ' (loss: ' + ((inboundStats.packetsLost / (inboundStats.packetsReceived + inboundStats.packetsLost)) * 100).toFixed(2) + '%)';
+
+                    statsText += '\n';
+                }
+
+                statsText += '\n';
+
+                statsTextarea.textContent = statsText;
+
+                lastTrackStats[track.id] = stats;
+            }
+        }
+
+        setInterval(gatherStats, 1000);
+
+        gatherStats();
+    }
+</script>
 </body>
 </html>
