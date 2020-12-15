@@ -6,6 +6,7 @@
 
 using DtlsConnectionHash = DTLSConnection::Hash;
 using DtlsIceTransportDtlsState = DTLSICETransport::DTLSState;
+using MediaFrameType = MediaFrame::Type;
 
 class Properties;
 
@@ -36,16 +37,37 @@ std::unique_ptr<PropertiesFacade> new_properties();
 struct DtlsIceTransportListenerRustAdapter;
 struct DtlsIceTransportListenerCxxAdapter;
 
+struct OwnedRtpBundleTransportConnection {
+    OwnedRtpBundleTransportConnection(std::shared_ptr<RTPBundleTransport> transport, RTPBundleTransport::Connection *connection);
+    ~OwnedRtpBundleTransportConnection();
+    RTPBundleTransport::Connection *operator->();
+
+private:
+    std::shared_ptr<RTPBundleTransport> transport;
+    RTPBundleTransport::Connection *connection;
+};
+
+struct RtpIncomingSourceGroupFacade {
+    RtpIncomingSourceGroupFacade(std::shared_ptr<OwnedRtpBundleTransportConnection> connection, std::unique_ptr<RTPIncomingSourceGroup> source_group);
+    ~RtpIncomingSourceGroupFacade();
+
+private:
+    std::shared_ptr<OwnedRtpBundleTransportConnection> connection;
+    std::unique_ptr<RTPIncomingSourceGroup> source_group;
+};
+
 struct RtpBundleTransportConnectionFacade {
-    RtpBundleTransportConnectionFacade(std::shared_ptr<RTPBundleTransport> transport, std::string username, RTPBundleTransport::Connection *connection);
+    RtpBundleTransportConnectionFacade(std::shared_ptr<RTPBundleTransport> transport, std::shared_ptr<OwnedRtpBundleTransportConnection> connection);
     ~RtpBundleTransportConnectionFacade();
     void set_listener(rust::Box<DtlsIceTransportListenerRustAdapter> listener) const;
+    void set_remote_properties(const PropertiesFacade &properties) const;
+    void set_local_properties(const PropertiesFacade &properties) const;
+    std::unique_ptr<RtpIncomingSourceGroupFacade> add_incoming_source_group(MediaFrameType type, rust::Str mid, rust::Str rid, uint32_t mediaSsrc, uint32_t rtxSsrc) const;
     void add_remote_candidate(rust::Str ip, uint16_t port) const;
 
 private:
     std::shared_ptr<RTPBundleTransport> transport;
-    std::string username;
-    RTPBundleTransport::Connection *connection;
+    std::shared_ptr<OwnedRtpBundleTransportConnection> connection;
     mutable std::unique_ptr<DtlsIceTransportListenerCxxAdapter> active_listener;
 };
 

@@ -88,24 +88,63 @@ struct DtlsIceTransportListenerCxxAdapter: DTLSICETransport::Listener {
     rust::Box<DtlsIceTransportListenerRustAdapter> listener;
 };
 
-RtpBundleTransportConnectionFacade::RtpBundleTransportConnectionFacade(std::shared_ptr<RTPBundleTransport> transport, std::string username, RTPBundleTransport::Connection *connection):
-    transport(std::move(transport)), username(std::move(username)), connection(connection), active_listener(nullptr) {}
+OwnedRtpBundleTransportConnection::OwnedRtpBundleTransportConnection(std::shared_ptr<RTPBundleTransport> transport, RTPBundleTransport::Connection *connection):
+    transport(std::move(transport)), connection(connection) {}
+
+OwnedRtpBundleTransportConnection::~OwnedRtpBundleTransportConnection() {
+    transport->RemoveICETransport(connection->username);
+}
+
+RTPBundleTransport::Connection *OwnedRtpBundleTransportConnection::operator->() {
+    return connection;
+}
+
+RtpIncomingSourceGroupFacade::RtpIncomingSourceGroupFacade(std::shared_ptr<OwnedRtpBundleTransportConnection> connection, std::unique_ptr<RTPIncomingSourceGroup> source_group):
+    connection(std::move(connection)), source_group(std::move(source_group)) {}
+
+RtpIncomingSourceGroupFacade::~RtpIncomingSourceGroupFacade() {
+    (*connection)->transport->RemoveIncomingSourceGroup(source_group.get());
+}
+
+RtpBundleTransportConnectionFacade::RtpBundleTransportConnectionFacade(std::shared_ptr<RTPBundleTransport> transport, std::shared_ptr<OwnedRtpBundleTransportConnection> connection):
+    transport(std::move(transport)), connection(std::move(connection)), active_listener(nullptr) {}
 
 RtpBundleTransportConnectionFacade::~RtpBundleTransportConnectionFacade() {
-    connection->transport->SetListener(nullptr);
+    (*connection)->transport->SetListener(nullptr);
     active_listener = nullptr;
-
-    transport->RemoveICETransport(username);
 }
 
 void RtpBundleTransportConnectionFacade::set_listener(rust::Box<DtlsIceTransportListenerRustAdapter> listener) const {
     active_listener = std::make_unique<DtlsIceTransportListenerCxxAdapter>(std::move(listener));
-    connection->transport->SetListener(active_listener.get());
+    (*connection)->transport->SetListener(active_listener.get());
+}
+
+void RtpBundleTransportConnectionFacade::set_remote_properties(const PropertiesFacade &properties) const {
+    (*connection)->transport->SetRemoteProperties(properties);
+}
+
+void RtpBundleTransportConnectionFacade::set_local_properties(const PropertiesFacade &properties) const {
+    (*connection)->transport->SetLocalProperties(properties);
+}
+
+std::unique_ptr<RtpIncomingSourceGroupFacade> RtpBundleTransportConnectionFacade::add_incoming_source_group(MediaFrameType type, rust::Str mid, rust::Str rid, uint32_t mediaSsrc, uint32_t rtxSsrc) const {
+    auto ssrc_group = std::make_unique<RTPIncomingSourceGroup>(type, transport->GetTimeService());
+
+    ssrc_group->mid = std::string(mid);
+    ssrc_group->rid = std::string(rid);
+    ssrc_group->media.ssrc = mediaSsrc;
+    ssrc_group->rtx.ssrc = rtxSsrc;
+
+    if (!(*connection)->transport->AddIncomingSourceGroup(ssrc_group.get())) {
+        throw std::runtime_error("failed to add incoming source group");
+    }
+
+    return std::make_unique<RtpIncomingSourceGroupFacade>(connection, std::move(ssrc_group));
 }
 
 void RtpBundleTransportConnectionFacade::add_remote_candidate(rust::Str ip, uint16_t port) const {
     std::string ipString = std::string(ip);
-    transport->AddRemoteCandidate(username, ipString.c_str(), port);
+    transport->AddRemoteCandidate((*connection)->username, ipString.c_str(), port);
 }
 
 RtpBundleTransportFacade::RtpBundleTransportFacade(uint16_t port):
@@ -127,7 +166,9 @@ std::unique_ptr<RtpBundleTransportConnectionFacade> RtpBundleTransportFacade::ad
         throw std::runtime_error("ice transport creation failed");
     }
 
-    return std::make_unique<RtpBundleTransportConnectionFacade>(transport, usernameString, connection);
+    auto owned_connection = std::make_shared<OwnedRtpBundleTransportConnection>(transport, connection);
+
+    return std::make_unique<RtpBundleTransportConnectionFacade>(transport, owned_connection);
 }
 
 std::unique_ptr<RtpBundleTransportFacade> new_rtp_bundle_transport(uint16_t port) {

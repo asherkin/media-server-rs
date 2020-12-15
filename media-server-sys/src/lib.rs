@@ -21,6 +21,15 @@ mod ffi {
         Failed,
     }
 
+    #[repr(i32)]
+    #[derive(Debug, Copy, Clone)]
+    enum MediaFrameType {
+        Unknown = -1,
+        Audio,
+        Video,
+        Text,
+    }
+
     extern "Rust" {
         type DtlsIceTransportListenerRustAdapter;
         fn on_ice_timeout(self: &mut DtlsIceTransportListenerRustAdapter);
@@ -38,6 +47,7 @@ mod ffi {
 
         type DtlsConnectionHash;
         type DtlsIceTransportDtlsState;
+        type MediaFrameType;
 
         fn logger_enable_log(flag: bool);
         fn logger_enable_debug(flag: bool);
@@ -54,8 +64,20 @@ mod ffi {
         fn set_bool(self: &PropertiesFacade, key: &str, value: bool);
         fn set_string(self: &PropertiesFacade, key: &str, value: &str);
 
+        type RtpIncomingSourceGroupFacade;
+
         type RtpBundleTransportConnectionFacade;
         fn set_listener(self: &RtpBundleTransportConnectionFacade, listener: Box<DtlsIceTransportListenerRustAdapter>);
+        fn set_remote_properties(self: &RtpBundleTransportConnectionFacade, properties: &PropertiesFacade);
+        fn set_local_properties(self: &RtpBundleTransportConnectionFacade, properties: &PropertiesFacade);
+        fn add_incoming_source_group(
+            self: &RtpBundleTransportConnectionFacade,
+            kind: MediaFrameType,
+            mid: &str,
+            rid: &str,
+            media_ssrc: u32,
+            rtx_ssrc: u32,
+        ) -> Result<UniquePtr<RtpIncomingSourceGroupFacade>>;
         fn add_remote_candidate(self: &RtpBundleTransportConnectionFacade, ip: &str, port: u16);
 
         type RtpBundleTransportFacade;
@@ -71,6 +93,11 @@ mod ffi {
 
 pub use cxx::UniquePtr;
 pub use ffi::*;
+
+unsafe impl Send for PropertiesFacade {}
+unsafe impl Send for RtpIncomingSourceGroupFacade {}
+unsafe impl Send for RtpBundleTransportConnectionFacade {}
+unsafe impl Send for RtpBundleTransportFacade {}
 
 impl std::fmt::Debug for DtlsIceTransportDtlsState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

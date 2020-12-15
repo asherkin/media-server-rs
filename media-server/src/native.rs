@@ -91,12 +91,43 @@ pub use bridge::DtlsIceTransportListener;
 
 pub type DtlsIceTransportDtlsState = bridge::DtlsIceTransportDtlsState;
 
+pub type MediaFrameType = bridge::MediaFrameType;
+
+pub struct RtpIncomingSourceGroup(cxx::UniquePtr<bridge::RtpIncomingSourceGroupFacade>);
+
 pub struct RtpBundleTransportConnection(cxx::UniquePtr<bridge::RtpBundleTransportConnectionFacade>);
 
 impl RtpBundleTransportConnection {
     pub fn set_listener(&self, listener: impl DtlsIceTransportListener + 'static) {
         let listener = bridge::DtlsIceTransportListenerRustAdapter::from(listener);
         self.0.set_listener(Box::new(listener));
+    }
+
+    pub fn set_remote_properties(&self, properties: &Properties) {
+        self.0.set_remote_properties(&properties.0);
+    }
+
+    pub fn set_local_properties(&self, properties: &Properties) {
+        self.0.set_local_properties(&properties.0);
+    }
+
+    pub fn add_incoming_source_group(
+        &self,
+        kind: MediaFrameType,
+        mid: Option<&str>,
+        rid: Option<&str>,
+        media_ssrc: Option<u32>,
+        rtx_ssrc: Option<u32>,
+    ) -> Result<RtpIncomingSourceGroup> {
+        let incoming_source_group = self.0.add_incoming_source_group(
+            kind,
+            mid.unwrap_or(""),
+            rid.unwrap_or(""),
+            media_ssrc.unwrap_or(0),
+            rtx_ssrc.unwrap_or(0),
+        )?;
+
+        Ok(RtpIncomingSourceGroup(incoming_source_group))
     }
 
     pub fn add_remote_candidate(&self, ip: &str, port: u16) {
