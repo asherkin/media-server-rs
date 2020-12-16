@@ -1,8 +1,11 @@
 use std::error::Error;
+use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
+use std::sync::Arc;
 
 use futures::prelude::*;
 use serde::{Deserialize, Serialize};
+use structopt::StructOpt;
 use warp::ws::Message;
 use warp::Filter;
 
@@ -14,6 +17,23 @@ use media_server::{
     DtlsConnectionHash, LoggingLevel, MediaFrameType, Properties, RtpBundleTransport, RtpBundleTransportConnection,
     RtpIncomingSourceGroup,
 };
+
+#[derive(Debug, Clone, StructOpt)]
+struct Opts {
+    #[structopt(short, long, default_value = "127.0.0.1:8080")]
+    listen: SocketAddr,
+    #[structopt(short, long, default_value = "127.0.0.1")]
+    public_ip: IpAddr,
+    #[structopt(short = "r", long, parse(try_from_str = parse_port_range))]
+    port_range: Option<(u16, u16)>,
+}
+
+fn parse_port_range(s: &str) -> Result<(u16, u16), String> {
+    let split_point = s.find('-').ok_or("expected 'min-max' range")?;
+    let min = u16::from_str(&s[..split_point]).map_err(|e| e.to_string())?;
+    let max = u16::from_str(&s[split_point + 1..]).map_err(|e| e.to_string())?;
+    Ok((min, max))
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
@@ -158,6 +178,7 @@ struct ActiveSession {
 }
 
 async fn handle_offer(
+    opts: Arc<Opts>,
     websocket: &mut warp::ws::WebSocket,
     offer: &UnifiedBundleSession,
 ) -> Result<ActiveSession, Box<dyn Error>> {
@@ -185,7 +206,7 @@ async fn handle_offer(
         component: 1,
         transport: IceTransportType::Udp,
         priority: (2u32.pow(24) * 126) + (2u32.pow(8) * (65535 - 1)) + 255,
-        address: "127.0.0.1".to_owned(),
+        address: opts.public_ip.to_string(),
         port: transport.get_local_port(),
         kind: IceCandidateType::Host,
         rel_addr: None,
@@ -276,7 +297,7 @@ async fn handle_offer(
     })
 }
 
-async fn on_websocket_upgrade(mut websocket: warp::ws::WebSocket) {
+async fn on_websocket_upgrade(opts: Arc<Opts>, mut websocket: warp::ws::WebSocket) {
     // Stores the media-server objects for the current websocket
     let mut session = None;
 
@@ -309,7 +330,7 @@ async fn on_websocket_upgrade(mut websocket: warp::ws::WebSocket) {
 
         match parsed {
             C2SMessage::Offer { sdp } => {
-                match handle_offer(&mut websocket, &sdp).await {
+                match handle_offer(opts.clone(), &mut websocket, &sdp).await {
                     Ok(new_session) => session.replace(new_session),
                     Err(e) => {
                         log::warn!("failed to handle offer: {}", e);
@@ -325,13 +346,23 @@ async fn on_websocket_upgrade(mut websocket: warp::ws::WebSocket) {
 async fn main() {
     pretty_env_logger::init();
 
+    let opts = Arc::new(Opts::from_args());
+
+    let opts_filter_clone = opts.clone();
+    let opts_filter = warp::any().map(move || opts_filter_clone.clone());
+
     media_server::library_init(LoggingLevel::Debug).unwrap();
+
+    if opts.port_range.is_some() {
+        media_server::set_port_range(opts.port_range).unwrap();
+    }
 
     let websocket = warp::get()
         .and(warp::path::path("ws"))
         .and(warp::path::end())
         .and(warp::ws())
-        .map(|ws: warp::ws::Ws| ws.on_upgrade(on_websocket_upgrade));
+        .and(opts_filter)
+        .map(|ws: warp::ws::Ws, opts: Arc<Opts>| ws.on_upgrade(|w| on_websocket_upgrade(opts, w)));
 
     let index = warp::get()
         .and(warp::path::end())
@@ -353,7 +384,11 @@ async fn main() {
             warp::reply::with_header(favicon.as_ref(), "Content-Type", "image/vnd.microsoft.icon")
         });
 
-    let routes = websocket.or(index).or(adapter).or(favicon).with(warp::log("media_server_demo::http"));
+    let routes = websocket
+        .or(index)
+        .or(adapter)
+        .or(favicon)
+        .with(warp::log("media_server_demo::http"));
 
-    warp::serve(routes).run(([127, 0, 0, 1], 8080)).await;
+    warp::serve(routes).run(opts.listen).await;
 }

@@ -58,6 +58,8 @@ mod ffi {
         fn dtls_connection_initialize() -> Result<()>;
         fn dtls_connection_get_certificate_fingerprint(hash: DtlsConnectionHash) -> Result<String>;
 
+        fn rtp_transport_set_port_range(min: u16, max: u16) -> Result<()>;
+
         type PropertiesFacade;
         fn new_properties() -> UniquePtr<PropertiesFacade>;
         fn set_int(self: &PropertiesFacade, key: &str, value: i32);

@@ -2,6 +2,7 @@
 #include "media-server-sys/src/lib.rs.h"
 
 #include "OpenSSL.h"
+#include "RTPTransport.h"
 
 // This is from media-server, but it doesn't have an implementation.
 // It should not actually ever be called.
@@ -40,6 +41,12 @@ rust::String dtls_connection_get_certificate_fingerprint(DtlsConnectionHash hash
     }
 
     return fingerprint;
+}
+
+void rtp_transport_set_port_range(uint16_t min, uint16_t max) {
+    if (!RTPTransport::SetPortRange(min, max)) {
+        throw std::runtime_error("failed to set rtp port range");
+    }
 }
 
 PropertiesFacade::PropertiesFacade():

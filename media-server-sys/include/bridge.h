@@ -20,6 +20,8 @@ void dtls_connection_initialize();
 
 rust::String dtls_connection_get_certificate_fingerprint(DtlsConnectionHash hash);
 
+void rtp_transport_set_port_range(uint16_t min, uint16_t max);
+
 struct PropertiesFacade {
     PropertiesFacade();
     operator const Properties &() const;

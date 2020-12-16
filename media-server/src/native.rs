@@ -67,6 +67,13 @@ pub fn get_certificate_fingerprint(hash: DtlsConnectionHash) -> Result<String> {
     Ok(fingerprint)
 }
 
+pub fn set_port_range(range: Option<(u16, u16)>) -> Result<()> {
+    // TODO: It looks like resetting the range to unrestricted may be broken in the library.
+    let (min, max) = range.unwrap_or((0, 0));
+    bridge::rtp_transport_set_port_range(min, max)?;
+    Ok(())
+}
+
 pub struct Properties(cxx::UniquePtr<bridge::PropertiesFacade>);
 
 impl Properties {
