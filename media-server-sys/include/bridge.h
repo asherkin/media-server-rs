@@ -23,15 +23,13 @@ rust::String dtls_connection_get_certificate_fingerprint(DtlsConnectionHash hash
 void rtp_transport_set_port_range(uint16_t min, uint16_t max);
 
 struct PropertiesFacade {
-    PropertiesFacade();
     operator const Properties &() const;
-    void set_int(rust::Str key, int value) const;
-    void set_bool(rust::Str key, bool value) const;
-    void set_string(rust::Str key, rust::Str value) const;
+    void set_int(rust::Str key, int value);
+    void set_bool(rust::Str key, bool value);
+    void set_string(rust::Str key, rust::Str value);
 
 private:
-    // TODO: We need an indirection layer here due to constness, is there something better?
-    std::unique_ptr<Properties> properties;
+    Properties properties;
 };
 
 std::unique_ptr<PropertiesFacade> new_properties();
@@ -61,22 +59,22 @@ private:
 struct RtpBundleTransportConnectionFacade {
     RtpBundleTransportConnectionFacade(std::shared_ptr<RTPBundleTransport> transport, std::shared_ptr<OwnedRtpBundleTransportConnection> connection);
     ~RtpBundleTransportConnectionFacade();
-    void set_listener(rust::Box<DtlsIceTransportListenerRustAdapter> listener) const;
-    void set_remote_properties(const PropertiesFacade &properties) const;
-    void set_local_properties(const PropertiesFacade &properties) const;
-    std::unique_ptr<RtpIncomingSourceGroupFacade> add_incoming_source_group(MediaFrameType type, rust::Str mid, rust::Str rid, uint32_t mediaSsrc, uint32_t rtxSsrc) const;
-    void add_remote_candidate(rust::Str ip, uint16_t port) const;
+    void set_listener(rust::Box<DtlsIceTransportListenerRustAdapter> listener);
+    void set_remote_properties(const PropertiesFacade &properties);
+    void set_local_properties(const PropertiesFacade &properties);
+    std::unique_ptr<RtpIncomingSourceGroupFacade> add_incoming_source_group(MediaFrameType type, rust::Str mid, rust::Str rid, uint32_t mediaSsrc, uint32_t rtxSsrc);
+    void add_remote_candidate(rust::Str ip, uint16_t port);
 
 private:
     std::shared_ptr<RTPBundleTransport> transport;
     std::shared_ptr<OwnedRtpBundleTransportConnection> connection;
-    mutable std::unique_ptr<DtlsIceTransportListenerCxxAdapter> active_listener;
+    std::unique_ptr<DtlsIceTransportListenerCxxAdapter> active_listener;
 };
 
 struct RtpBundleTransportFacade {
     RtpBundleTransportFacade(uint16_t port = 0);
     uint16_t get_local_port() const;
-    std::unique_ptr<RtpBundleTransportConnectionFacade> add_ice_transport(rust::Str username, const PropertiesFacade &properties) const;
+    std::unique_ptr<RtpBundleTransportConnectionFacade> add_ice_transport(rust::Str username, const PropertiesFacade &properties);
 
 private:
     std::shared_ptr<RTPBundleTransport> transport;

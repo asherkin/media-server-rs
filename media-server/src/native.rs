@@ -81,16 +81,22 @@ impl Properties {
         Self(bridge::new_properties())
     }
 
-    pub fn set_int(&self, key: &str, value: i32) {
-        self.0.set_int(key, value);
+    pub fn set_int(&mut self, key: &str, value: i32) {
+        self.0.pin_mut().set_int(key, value);
     }
 
-    pub fn set_bool(&self, key: &str, value: bool) {
-        self.0.set_bool(key, value);
+    pub fn set_bool(&mut self, key: &str, value: bool) {
+        self.0.pin_mut().set_bool(key, value);
     }
 
-    pub fn set_string(&self, key: &str, value: &str) {
-        self.0.set_string(key, value);
+    pub fn set_string(&mut self, key: &str, value: &str) {
+        self.0.pin_mut().set_string(key, value);
+    }
+}
+
+impl Default for Properties {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -105,28 +111,28 @@ pub struct RtpIncomingSourceGroup(cxx::UniquePtr<bridge::RtpIncomingSourceGroupF
 pub struct RtpBundleTransportConnection(cxx::UniquePtr<bridge::RtpBundleTransportConnectionFacade>);
 
 impl RtpBundleTransportConnection {
-    pub fn set_listener(&self, listener: impl DtlsIceTransportListener + 'static) {
+    pub fn set_listener(&mut self, listener: impl DtlsIceTransportListener + 'static) {
         let listener = bridge::DtlsIceTransportListenerRustAdapter::from(listener);
-        self.0.set_listener(Box::new(listener));
+        self.0.pin_mut().set_listener(Box::new(listener));
     }
 
-    pub fn set_remote_properties(&self, properties: &Properties) {
-        self.0.set_remote_properties(&properties.0);
+    pub fn set_remote_properties(&mut self, properties: &Properties) {
+        self.0.pin_mut().set_remote_properties(&properties.0);
     }
 
-    pub fn set_local_properties(&self, properties: &Properties) {
-        self.0.set_local_properties(&properties.0);
+    pub fn set_local_properties(&mut self, properties: &Properties) {
+        self.0.pin_mut().set_local_properties(&properties.0);
     }
 
     pub fn add_incoming_source_group(
-        &self,
+        &mut self,
         kind: MediaFrameType,
         mid: Option<&str>,
         rid: Option<&str>,
         media_ssrc: Option<u32>,
         rtx_ssrc: Option<u32>,
     ) -> Result<RtpIncomingSourceGroup> {
-        let incoming_source_group = self.0.add_incoming_source_group(
+        let incoming_source_group = self.0.pin_mut().add_incoming_source_group(
             kind,
             mid.unwrap_or(""),
             rid.unwrap_or(""),
@@ -137,8 +143,8 @@ impl RtpBundleTransportConnection {
         Ok(RtpIncomingSourceGroup(incoming_source_group))
     }
 
-    pub fn add_remote_candidate(&self, ip: &str, port: u16) {
-        self.0.add_remote_candidate(ip, port);
+    pub fn add_remote_candidate(&mut self, ip: &str, port: u16) {
+        self.0.pin_mut().add_remote_candidate(ip, port);
     }
 }
 
@@ -155,8 +161,12 @@ impl RtpBundleTransport {
         self.0.get_local_port()
     }
 
-    pub fn add_ice_transport(&self, username: &str, properties: &Properties) -> Result<RtpBundleTransportConnection> {
-        let connection = self.0.add_ice_transport(username, &properties.0)?;
+    pub fn add_ice_transport(
+        &mut self,
+        username: &str,
+        properties: &Properties,
+    ) -> Result<RtpBundleTransportConnection> {
+        let connection = self.0.pin_mut().add_ice_transport(username, &properties.0)?;
         Ok(RtpBundleTransportConnection(connection))
     }
 }

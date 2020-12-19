@@ -49,27 +49,24 @@ void rtp_transport_set_port_range(uint16_t min, uint16_t max) {
     }
 }
 
-PropertiesFacade::PropertiesFacade():
-    properties(std::make_unique<Properties>()) {}
-
 PropertiesFacade::operator const Properties &() const {
-    return *properties;
+    return properties;
 }
 
-void PropertiesFacade::set_int(rust::Str key, int value) const {
-    std::string keyString = std::string(key);
-    properties->SetProperty(keyString.c_str(), value);
+void PropertiesFacade::set_int(rust::Str key, int value) {
+    std::string key_string = std::string(key);
+    properties.SetProperty(key_string.c_str(), value);
 }
 
-void PropertiesFacade::set_bool(rust::Str key, bool value) const {
-    std::string keyString = std::string(key);
-    properties->SetProperty(keyString.c_str(), value);
+void PropertiesFacade::set_bool(rust::Str key, bool value) {
+    std::string key_string = std::string(key);
+    properties.SetProperty(key_string.c_str(), value);
 }
 
-void PropertiesFacade::set_string(rust::Str key, rust::Str value) const {
-    std::string keyString = std::string(key);
-    std::string valueString = std::string(value);
-    properties->SetProperty(keyString.c_str(), valueString.c_str());
+void PropertiesFacade::set_string(rust::Str key, rust::Str value) {
+    std::string key_string = std::string(key);
+    std::string value_string = std::string(value);
+    properties.SetProperty(key_string.c_str(), value_string.c_str());
 }
 
 std::unique_ptr<PropertiesFacade> new_properties() {
@@ -88,7 +85,7 @@ struct DtlsIceTransportListenerCxxAdapter: DTLSICETransport::Listener {
         listener->on_dtls_state_changed(state);
     }
 
-    void onRemoteICECandidateActivated(const std::string& ip, uint16_t port, uint32_t priority) override {
+    void onRemoteICECandidateActivated(const std::string &ip, uint16_t port, uint32_t priority) override {
         listener->on_remote_ice_candidate_activated(ip, port, priority);
     }
 
@@ -121,35 +118,35 @@ RtpBundleTransportConnectionFacade::~RtpBundleTransportConnectionFacade() {
     active_listener = nullptr;
 }
 
-void RtpBundleTransportConnectionFacade::set_listener(rust::Box<DtlsIceTransportListenerRustAdapter> listener) const {
+void RtpBundleTransportConnectionFacade::set_listener(rust::Box<DtlsIceTransportListenerRustAdapter> listener) {
     active_listener = std::make_unique<DtlsIceTransportListenerCxxAdapter>(std::move(listener));
     (*connection)->transport->SetListener(active_listener.get());
 }
 
-void RtpBundleTransportConnectionFacade::set_remote_properties(const PropertiesFacade &properties) const {
+void RtpBundleTransportConnectionFacade::set_remote_properties(const PropertiesFacade &properties) {
     (*connection)->transport->SetRemoteProperties(properties);
 }
 
-void RtpBundleTransportConnectionFacade::set_local_properties(const PropertiesFacade &properties) const {
+void RtpBundleTransportConnectionFacade::set_local_properties(const PropertiesFacade &properties) {
     (*connection)->transport->SetLocalProperties(properties);
 }
 
-std::unique_ptr<RtpIncomingSourceGroupFacade> RtpBundleTransportConnectionFacade::add_incoming_source_group(MediaFrameType type, rust::Str mid, rust::Str rid, uint32_t mediaSsrc, uint32_t rtxSsrc) const {
-    auto ssrc_group = std::make_unique<RTPIncomingSourceGroup>(type, transport->GetTimeService());
+std::unique_ptr<RtpIncomingSourceGroupFacade> RtpBundleTransportConnectionFacade::add_incoming_source_group(MediaFrameType type, rust::Str mid, rust::Str rid, uint32_t mediaSsrc, uint32_t rtxSsrc) {
+    auto source_group = std::make_unique<RTPIncomingSourceGroup>(type, transport->GetTimeService());
 
-    ssrc_group->mid = std::string(mid);
-    ssrc_group->rid = std::string(rid);
-    ssrc_group->media.ssrc = mediaSsrc;
-    ssrc_group->rtx.ssrc = rtxSsrc;
+    source_group->mid = std::string(mid);
+    source_group->rid = std::string(rid);
+    source_group->media.ssrc = mediaSsrc;
+    source_group->rtx.ssrc = rtxSsrc;
 
-    if (!(*connection)->transport->AddIncomingSourceGroup(ssrc_group.get())) {
+    if (!(*connection)->transport->AddIncomingSourceGroup(source_group.get())) {
         throw std::runtime_error("failed to add incoming source group");
     }
 
-    return std::make_unique<RtpIncomingSourceGroupFacade>(connection, std::move(ssrc_group));
+    return std::make_unique<RtpIncomingSourceGroupFacade>(connection, std::move(source_group));
 }
 
-void RtpBundleTransportConnectionFacade::add_remote_candidate(rust::Str ip, uint16_t port) const {
+void RtpBundleTransportConnectionFacade::add_remote_candidate(rust::Str ip, uint16_t port) {
     std::string ipString = std::string(ip);
     transport->AddRemoteCandidate((*connection)->username, ipString.c_str(), port);
 }
@@ -165,10 +162,10 @@ uint16_t RtpBundleTransportFacade::get_local_port() const {
     return (uint16_t)transport->GetLocalPort();
 }
 
-std::unique_ptr<RtpBundleTransportConnectionFacade> RtpBundleTransportFacade::add_ice_transport(rust::Str username, const PropertiesFacade &properties) const {
-    std::string usernameString = std::string(username);
+std::unique_ptr<RtpBundleTransportConnectionFacade> RtpBundleTransportFacade::add_ice_transport(rust::Str username, const PropertiesFacade &properties) {
+    std::string username_string = std::string(username);
 
-    auto connection = transport->AddICETransport(usernameString, properties);
+    auto connection = transport->AddICETransport(username_string, properties);
     if (!connection) {
         throw std::runtime_error("ice transport creation failed");
     }

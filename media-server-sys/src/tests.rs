@@ -49,11 +49,11 @@ fn create_transport() {
 fn create_connection_failure() {
     library_init().unwrap();
 
-    let transport = new_rtp_bundle_transport(0).unwrap();
+    let mut transport = new_rtp_bundle_transport(0).unwrap();
 
     let properties = new_properties();
 
-    let connection_result = transport.add_ice_transport("invalid", &properties);
+    let connection_result = transport.pin_mut().add_ice_transport("invalid", &properties);
     assert!(connection_result.is_err());
 }
 
@@ -63,20 +63,23 @@ fn transport_connection() {
 
     let fingerprint = dtls_connection_get_certificate_fingerprint(DtlsConnectionHash::SHA256).unwrap();
 
-    let transport_one = new_rtp_bundle_transport(0).unwrap();
+    let mut transport_one = new_rtp_bundle_transport(0).unwrap();
 
-    let properties_one = new_properties();
-    properties_one.set_string("ice.localUsername", "one");
-    properties_one.set_string("ice.localPassword", "one");
-    properties_one.set_string("ice.remoteUsername", "two");
-    properties_one.set_string("ice.remotePassword", "two");
-    properties_one.set_string("dtls.setup", "passive");
-    properties_one.set_string("dtls.hash", "SHA-256");
-    properties_one.set_string("dtls.fingerprint", &fingerprint);
-    properties_one.set_bool("disableSTUNKeepAlive", true);
-    properties_one.set_string("srtpProtectionProfiles", "");
+    let mut properties_one = new_properties();
+    properties_one.pin_mut().set_string("ice.localUsername", "one");
+    properties_one.pin_mut().set_string("ice.localPassword", "one");
+    properties_one.pin_mut().set_string("ice.remoteUsername", "two");
+    properties_one.pin_mut().set_string("ice.remotePassword", "two");
+    properties_one.pin_mut().set_string("dtls.setup", "passive");
+    properties_one.pin_mut().set_string("dtls.hash", "SHA-256");
+    properties_one.pin_mut().set_string("dtls.fingerprint", &fingerprint);
+    properties_one.pin_mut().set_bool("disableSTUNKeepAlive", true);
+    properties_one.pin_mut().set_string("srtpProtectionProfiles", "");
 
-    let connection_one = transport_one.add_ice_transport("one:two", &properties_one).unwrap();
+    let mut connection_one = transport_one
+        .pin_mut()
+        .add_ice_transport("one:two", &properties_one)
+        .unwrap();
 
     struct LoggingDtlsIceTransportListener(&'static str, Option<oneshot::Sender<()>>);
 
@@ -105,30 +108,35 @@ fn transport_connection() {
     let listener_one = Box::new(DtlsIceTransportListenerRustAdapter::from(
         LoggingDtlsIceTransportListener("one", Some(sender_one)),
     ));
-    connection_one.set_listener(listener_one);
+    connection_one.pin_mut().set_listener(listener_one);
 
-    let transport_two = new_rtp_bundle_transport(0).unwrap();
+    let mut transport_two = new_rtp_bundle_transport(0).unwrap();
 
-    let properties_two = new_properties();
-    properties_two.set_string("ice.localUsername", "two");
-    properties_two.set_string("ice.localPassword", "two");
-    properties_two.set_string("ice.remoteUsername", "one");
-    properties_two.set_string("ice.remotePassword", "one");
-    properties_two.set_string("dtls.setup", "active");
-    properties_two.set_string("dtls.hash", "SHA-256");
-    properties_two.set_string("dtls.fingerprint", &fingerprint);
-    properties_two.set_bool("disableSTUNKeepAlive", true);
-    properties_two.set_string("srtpProtectionProfiles", "");
+    let mut properties_two = new_properties();
+    properties_two.pin_mut().set_string("ice.localUsername", "two");
+    properties_two.pin_mut().set_string("ice.localPassword", "two");
+    properties_two.pin_mut().set_string("ice.remoteUsername", "one");
+    properties_two.pin_mut().set_string("ice.remotePassword", "one");
+    properties_two.pin_mut().set_string("dtls.setup", "active");
+    properties_two.pin_mut().set_string("dtls.hash", "SHA-256");
+    properties_two.pin_mut().set_string("dtls.fingerprint", &fingerprint);
+    properties_two.pin_mut().set_bool("disableSTUNKeepAlive", true);
+    properties_two.pin_mut().set_string("srtpProtectionProfiles", "");
 
-    let connection_two = transport_two.add_ice_transport("two:one", &properties_two).unwrap();
+    let mut connection_two = transport_two
+        .pin_mut()
+        .add_ice_transport("two:one", &properties_two)
+        .unwrap();
 
     let (sender_two, receiver_two) = oneshot::channel();
     let listener_two = Box::new(DtlsIceTransportListenerRustAdapter::from(
         LoggingDtlsIceTransportListener("two", Some(sender_two)),
     ));
-    connection_two.set_listener(listener_two);
+    connection_two.pin_mut().set_listener(listener_two);
 
-    connection_two.add_remote_candidate("127.0.0.1", transport_one.get_local_port());
+    connection_two
+        .pin_mut()
+        .add_remote_candidate("127.0.0.1", transport_one.get_local_port());
 
     futures::executor::block_on(async {
         let connected = futures::future::try_join(receiver_one, receiver_two);

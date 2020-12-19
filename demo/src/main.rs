@@ -191,7 +191,7 @@ async fn handle_offer(
     //       and use it to guide implementation of those APIs later.
 
     // TODO: We shouldn't be creating one RtpBundleTransport (Endpoint) per connection.
-    let transport = RtpBundleTransport::new(None)?;
+    let mut transport = RtpBundleTransport::new(None)?;
 
     // This will generate a new ice ufrag/pwd,
     // we need to add our ICE candidates and DTLS fingerprint.
@@ -227,7 +227,7 @@ async fn handle_offer(
         .get(&FingerprintHashFunction::Sha256)
         .ok_or("sha-256 dtls fingerprint missing from offer")?;
 
-    let properties = Properties::new();
+    let mut properties = Properties::new();
     properties.set_string("ice.localUsername", &answer.ice_ufrag);
     properties.set_string("ice.localPassword", &answer.ice_pwd);
     properties.set_string("ice.remoteUsername", &offer.ice_ufrag);
@@ -239,7 +239,7 @@ async fn handle_offer(
     properties.set_string("srtpProtectionProfiles", "");
 
     let username = answer.ice_ufrag.clone() + ":" + &offer.ice_ufrag;
-    let connection = transport.add_ice_transport(username.as_str(), &properties)?;
+    let mut connection = transport.add_ice_transport(username.as_str(), &properties)?;
 
     let remote_properties = get_rtp_properties_from_sdp(offer);
     connection.set_remote_properties(&remote_properties);

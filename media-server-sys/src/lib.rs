@@ -62,31 +62,34 @@ mod ffi {
 
         type PropertiesFacade;
         fn new_properties() -> UniquePtr<PropertiesFacade>;
-        fn set_int(self: &PropertiesFacade, key: &str, value: i32);
-        fn set_bool(self: &PropertiesFacade, key: &str, value: bool);
-        fn set_string(self: &PropertiesFacade, key: &str, value: &str);
+        fn set_int(self: Pin<&mut PropertiesFacade>, key: &str, value: i32);
+        fn set_bool(self: Pin<&mut PropertiesFacade>, key: &str, value: bool);
+        fn set_string(self: Pin<&mut PropertiesFacade>, key: &str, value: &str);
 
         type RtpIncomingSourceGroupFacade;
 
         type RtpBundleTransportConnectionFacade;
-        fn set_listener(self: &RtpBundleTransportConnectionFacade, listener: Box<DtlsIceTransportListenerRustAdapter>);
-        fn set_remote_properties(self: &RtpBundleTransportConnectionFacade, properties: &PropertiesFacade);
-        fn set_local_properties(self: &RtpBundleTransportConnectionFacade, properties: &PropertiesFacade);
+        fn set_listener(
+            self: Pin<&mut RtpBundleTransportConnectionFacade>,
+            listener: Box<DtlsIceTransportListenerRustAdapter>,
+        );
+        fn set_remote_properties(self: Pin<&mut RtpBundleTransportConnectionFacade>, properties: &PropertiesFacade);
+        fn set_local_properties(self: Pin<&mut RtpBundleTransportConnectionFacade>, properties: &PropertiesFacade);
         fn add_incoming_source_group(
-            self: &RtpBundleTransportConnectionFacade,
+            self: Pin<&mut RtpBundleTransportConnectionFacade>,
             kind: MediaFrameType,
             mid: &str,
             rid: &str,
             media_ssrc: u32,
             rtx_ssrc: u32,
         ) -> Result<UniquePtr<RtpIncomingSourceGroupFacade>>;
-        fn add_remote_candidate(self: &RtpBundleTransportConnectionFacade, ip: &str, port: u16);
+        fn add_remote_candidate(self: Pin<&mut RtpBundleTransportConnectionFacade>, ip: &str, port: u16);
 
         type RtpBundleTransportFacade;
         fn new_rtp_bundle_transport(port: u16) -> Result<UniquePtr<RtpBundleTransportFacade>>;
         fn get_local_port(self: &RtpBundleTransportFacade) -> u16;
         fn add_ice_transport(
-            self: &RtpBundleTransportFacade,
+            self: Pin<&mut RtpBundleTransportFacade>,
             username: &str,
             properties: &PropertiesFacade,
         ) -> Result<UniquePtr<RtpBundleTransportConnectionFacade>>;
