@@ -50,6 +50,12 @@ impl std::fmt::Display for Ssrc {
     }
 }
 
+impl From<u32> for Ssrc {
+    fn from(value: u32) -> Self {
+        Self(value)
+    }
+}
+
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct Mid(pub String);
 

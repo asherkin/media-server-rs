@@ -103,11 +103,46 @@ RTPBundleTransport::Connection *OwnedRtpBundleTransportConnection::operator->() 
     return connection;
 }
 
-RtpIncomingSourceGroupFacade::RtpIncomingSourceGroupFacade(std::shared_ptr<OwnedRtpBundleTransportConnection> connection, std::unique_ptr<RTPIncomingSourceGroup> source_group):
+OwnedRtpIncomingSourceGroup::OwnedRtpIncomingSourceGroup(std::shared_ptr<OwnedRtpBundleTransportConnection> connection, std::unique_ptr<RTPIncomingSourceGroup> source_group):
     connection(std::move(connection)), source_group(std::move(source_group)) {}
 
-RtpIncomingSourceGroupFacade::~RtpIncomingSourceGroupFacade() {
+OwnedRtpIncomingSourceGroup::~OwnedRtpIncomingSourceGroup() {
     (*connection)->transport->RemoveIncomingSourceGroup(source_group.get());
+}
+
+RTPIncomingSourceGroup *OwnedRtpIncomingSourceGroup::operator->() {
+    return source_group.get();
+}
+
+RtpIncomingSourceGroupFacade::RtpIncomingSourceGroupFacade(std::shared_ptr<OwnedRtpIncomingSourceGroup> source_group):
+    source_group(std::move(source_group)) {}
+
+OwnedRtpOutgoingSourceGroup::OwnedRtpOutgoingSourceGroup(std::shared_ptr<OwnedRtpBundleTransportConnection> connection, std::unique_ptr<RTPOutgoingSourceGroup> source_group):
+        connection(std::move(connection)), source_group(std::move(source_group)) {}
+
+OwnedRtpOutgoingSourceGroup::~OwnedRtpOutgoingSourceGroup() {
+    (*connection)->transport->RemoveOutgoingSourceGroup(source_group.get());
+}
+
+RTPOutgoingSourceGroup *OwnedRtpOutgoingSourceGroup::operator->() {
+    return source_group.get();
+}
+
+RtpOutgoingSourceGroupFacade::RtpOutgoingSourceGroupFacade(std::shared_ptr<OwnedRtpOutgoingSourceGroup> source_group):
+        source_group(std::move(source_group)) {}
+
+std::unique_ptr<RtpStreamTransponderFacade> RtpOutgoingSourceGroupFacade::add_transponder() {
+    return std::make_unique<RtpStreamTransponderFacade>(*this);
+}
+
+RtpStreamTransponderFacade::RtpStreamTransponderFacade(RtpOutgoingSourceGroupFacade &outgoing) {
+    this->outgoing = outgoing.source_group;
+    transponder = std::make_unique<RTPStreamTransponder>(this->outgoing->source_group.get(), (*this->outgoing->connection)->transport);
+}
+
+void RtpStreamTransponderFacade::set_incoming(RtpIncomingSourceGroupFacade &new_incoming) {
+    incoming = new_incoming.source_group;
+    transponder->SetIncoming(incoming->source_group.get(), (*incoming->connection)->transport);
 }
 
 RtpBundleTransportConnectionFacade::RtpBundleTransportConnectionFacade(std::shared_ptr<RTPBundleTransport> transport, std::shared_ptr<OwnedRtpBundleTransportConnection> connection):
@@ -143,7 +178,26 @@ std::unique_ptr<RtpIncomingSourceGroupFacade> RtpBundleTransportConnectionFacade
         throw std::runtime_error("failed to add incoming source group");
     }
 
-    return std::make_unique<RtpIncomingSourceGroupFacade>(connection, std::move(source_group));
+    auto owned_source_group = std::make_shared<OwnedRtpIncomingSourceGroup>(connection, std::move(source_group));
+
+    return std::make_unique<RtpIncomingSourceGroupFacade>(std::move(owned_source_group));
+}
+
+std::unique_ptr<RtpOutgoingSourceGroupFacade> RtpBundleTransportConnectionFacade::add_outgoing_source_group(MediaFrameType type, rust::Str mid, uint32_t mediaSsrc, uint32_t rtxSsrc) {
+    auto mid_string = std::string(mid);
+    auto source_group = std::make_unique<RTPOutgoingSourceGroup>(mid_string, type);
+
+    source_group->media.ssrc = mediaSsrc;
+    source_group->fec.ssrc = 0;
+    source_group->rtx.ssrc = rtxSsrc;
+
+    if (!(*connection)->transport->AddOutgoingSourceGroup(source_group.get())) {
+        throw std::runtime_error("failed to add outgoing source group");
+    }
+
+    auto owned_source_group = std::make_shared<OwnedRtpOutgoingSourceGroup>(connection, std::move(source_group));
+
+    return std::make_unique<RtpOutgoingSourceGroupFacade>(std::move(owned_source_group));
 }
 
 void RtpBundleTransportConnectionFacade::add_remote_candidate(rust::Str ip, uint16_t port) {

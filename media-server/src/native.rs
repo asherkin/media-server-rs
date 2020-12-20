@@ -108,6 +108,22 @@ pub type MediaFrameType = bridge::MediaFrameType;
 
 pub struct RtpIncomingSourceGroup(cxx::UniquePtr<bridge::RtpIncomingSourceGroupFacade>);
 
+pub struct RtpOutgoingSourceGroup(cxx::UniquePtr<bridge::RtpOutgoingSourceGroupFacade>);
+
+impl RtpOutgoingSourceGroup {
+    pub fn add_transponder(&mut self) -> RtpStreamTransponder {
+        RtpStreamTransponder(self.0.pin_mut().add_transponder())
+    }
+}
+
+pub struct RtpStreamTransponder(cxx::UniquePtr<bridge::RtpStreamTransponderFacade>);
+
+impl RtpStreamTransponder {
+    pub fn set_incoming(&mut self, incoming: &mut RtpIncomingSourceGroup) {
+        self.0.pin_mut().set_incoming(incoming.0.pin_mut());
+    }
+}
+
 pub struct RtpBundleTransportConnection(cxx::UniquePtr<bridge::RtpBundleTransportConnectionFacade>);
 
 impl RtpBundleTransportConnection {
@@ -141,6 +157,21 @@ impl RtpBundleTransportConnection {
         )?;
 
         Ok(RtpIncomingSourceGroup(incoming_source_group))
+    }
+
+    pub fn add_outgoing_source_group(
+        &mut self,
+        kind: MediaFrameType,
+        mid: Option<&str>,
+        media_ssrc: u32,
+        rtx_ssrc: Option<u32>,
+    ) -> Result<RtpOutgoingSourceGroup> {
+        let outgoing_source_group =
+            self.0
+                .pin_mut()
+                .add_outgoing_source_group(kind, mid.unwrap_or(""), media_ssrc, rtx_ssrc.unwrap_or(0))?;
+
+        Ok(RtpOutgoingSourceGroup(outgoing_source_group))
     }
 
     pub fn add_remote_candidate(&mut self, ip: &str, port: u16) {

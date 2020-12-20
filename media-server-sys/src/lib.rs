@@ -68,6 +68,12 @@ mod ffi {
 
         type RtpIncomingSourceGroupFacade;
 
+        type RtpOutgoingSourceGroupFacade;
+        fn add_transponder(self: Pin<&mut RtpOutgoingSourceGroupFacade>) -> UniquePtr<RtpStreamTransponderFacade>;
+
+        type RtpStreamTransponderFacade;
+        fn set_incoming(self: Pin<&mut RtpStreamTransponderFacade>, incoming: Pin<&mut RtpIncomingSourceGroupFacade>);
+
         type RtpBundleTransportConnectionFacade;
         fn set_listener(
             self: Pin<&mut RtpBundleTransportConnectionFacade>,
@@ -83,6 +89,13 @@ mod ffi {
             media_ssrc: u32,
             rtx_ssrc: u32,
         ) -> Result<UniquePtr<RtpIncomingSourceGroupFacade>>;
+        fn add_outgoing_source_group(
+            self: Pin<&mut RtpBundleTransportConnectionFacade>,
+            kind: MediaFrameType,
+            mid: &str,
+            media_ssrc: u32,
+            rtx_ssrc: u32,
+        ) -> Result<UniquePtr<RtpOutgoingSourceGroupFacade>>;
         fn add_remote_candidate(self: Pin<&mut RtpBundleTransportConnectionFacade>, ip: &str, port: u16);
 
         type RtpBundleTransportFacade;
@@ -101,6 +114,8 @@ pub use ffi::*;
 
 unsafe impl Send for PropertiesFacade {}
 unsafe impl Send for RtpIncomingSourceGroupFacade {}
+unsafe impl Send for RtpOutgoingSourceGroupFacade {}
+unsafe impl Send for RtpStreamTransponderFacade {}
 unsafe impl Send for RtpBundleTransportConnectionFacade {}
 unsafe impl Send for RtpBundleTransportFacade {}
 

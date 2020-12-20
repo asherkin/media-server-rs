@@ -4,6 +4,8 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use futures::prelude::*;
+use rand::distributions::Alphanumeric;
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use structopt::StructOpt;
 use warp::ws::Message;
@@ -12,10 +14,10 @@ use warp::Filter;
 use media_server::sdp::attributes::Candidate;
 use media_server::sdp::enums::{FingerprintHashFunction, IceCandidateType, IceTransportType, MediaType, RtpCodecName};
 use media_server::sdp::types::CertificateFingerprint;
-use media_server::sdp::webrtc::{RtpEncoding, RtpMediaDescription, UnifiedBundleSession};
+use media_server::sdp::webrtc::{MediaDirection, RtpEncoding, RtpMediaDescription, UnifiedBundleSession};
 use media_server::{
     DtlsConnectionHash, LoggingLevel, MediaFrameType, Properties, RtpBundleTransport, RtpBundleTransportConnection,
-    RtpIncomingSourceGroup,
+    RtpIncomingSourceGroup, RtpOutgoingSourceGroup, RtpStreamTransponder,
 };
 
 #[derive(Debug, Clone, StructOpt)]
@@ -175,6 +177,8 @@ struct ActiveSession {
     transport: RtpBundleTransport,
     connection: RtpBundleTransportConnection,
     incoming_source_groups: Vec<RtpIncomingSourceGroup>,
+    outgoing_source_groups: Vec<RtpOutgoingSourceGroup>,
+    transponders: Vec<RtpStreamTransponder>,
 }
 
 async fn handle_offer(
@@ -248,6 +252,8 @@ async fn handle_offer(
     connection.set_local_properties(&local_properties);
 
     let mut incoming_source_groups = Vec::new();
+    let mut outgoing_source_groups = Vec::new();
+    let mut transponders = Vec::new();
 
     // TODO: We've got a weird bug here where media-server isn't matching up the RTX
     //       packets with an encoding - both the MID and RID headers seems to be missing.
@@ -257,15 +263,19 @@ async fn handle_offer(
     //       encoding is not currently active. Doesn't look like there is anything to do
     //       and it recovers happily once all of the encodings become active.
 
-    for media_description in &offer.media_descriptions {
+    let mut answer_stream_id = None;
+
+    for (i, media_description) in offer.media_descriptions.iter().enumerate() {
         let frame_type = match media_description.kind {
             MediaType::Audio => MediaFrameType::Audio,
             MediaType::Video => MediaFrameType::Video,
             _ => continue,
         };
 
+        let mut outgoing_source_group = None;
+
         for encoding in &media_description.encodings {
-            let incoming_source_group = match encoding {
+            let mut incoming_source_group = match encoding {
                 RtpEncoding::Rid { rid, .. } => connection.add_incoming_source_group(
                     frame_type,
                     Some(&media_description.mid.0),
@@ -282,7 +292,56 @@ async fn handle_offer(
                 )?,
             };
 
+            if media_description.direction == MediaDirection::SendReceive && outgoing_source_group.is_none() {
+                let mut rng = rand::thread_rng();
+
+                let media_ssrc = rng.gen();
+                let rtx_ssrc = if frame_type == MediaFrameType::Video {
+                    Some(rng.gen())
+                } else {
+                    None
+                };
+
+                let mut new_outgoing_source_group = connection.add_outgoing_source_group(
+                    frame_type,
+                    Some(&media_description.mid.0),
+                    media_ssrc,
+                    rtx_ssrc,
+                )?;
+
+                let mut transponder = new_outgoing_source_group.add_transponder();
+
+                transponder.set_incoming(&mut incoming_source_group);
+
+                transponders.push(transponder);
+
+                outgoing_source_group = Some(new_outgoing_source_group);
+
+                let answer_media_description = answer.media_descriptions.get_mut(i).unwrap();
+
+                let cname = (&mut rng).sample_iter(Alphanumeric).take(24).map(char::from).collect();
+                let track_id = (&mut rng).sample_iter(Alphanumeric).take(24).map(char::from).collect();
+
+                if answer_stream_id.is_none() {
+                    let stream_id = (&mut rng).sample_iter(Alphanumeric).take(24).map(char::from).collect();
+                    answer_stream_id = Some(stream_id);
+                }
+
+                answer_media_description.track_id = Some(track_id);
+                answer_media_description.stream_id = answer_stream_id.clone();
+
+                answer_media_description.encodings.push(RtpEncoding::SendingSsrc {
+                    cname,
+                    ssrc: media_ssrc.into(),
+                    rtx_ssrc: rtx_ssrc.map(|v| v.into()),
+                });
+            }
+
             incoming_source_groups.push(incoming_source_group);
+        }
+
+        if let Some(outgoing_source_group) = outgoing_source_group {
+            outgoing_source_groups.push(outgoing_source_group);
         }
     }
 
@@ -294,6 +353,8 @@ async fn handle_offer(
         transport,
         connection,
         incoming_source_groups,
+        outgoing_source_groups,
+        transponders,
     })
 }
 

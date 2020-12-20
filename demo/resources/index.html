@@ -9,6 +9,9 @@
     <div style="width: 384px; height: 216px; background: black; margin: 1em 0;">
         <video autoplay id="local-video" muted playsinline style="width: 100%; height: 100%;"></video>
     </div>
+    <div style="width: 384px; height: 216px; background: black; margin: 1em 0;">
+        <video autoplay id="remote-video" muted playsinline style="width: 100%; height: 100%;"></video>
+    </div>
     <div style="margin: 1em 0;">
         <label>
             Simulcast:
@@ -19,18 +22,23 @@
                 <option value="3">x3</option>
             </select>
         </label>
+        <label>
+            <input type="checkbox" id="loopback" style="vertical-align: text-bottom;" checked>
+            Loopback
+        </label>
     </div>
     <button id="start-button" style="width: 100%;" type="button">Start</button>
-    <textarea id="stats"
-              style="margin: 1em 0; display: block; width: 100%; height: 200px; white-space: pre;"></textarea>
+    <textarea id="stats" style="margin: 1em 0; display: block; width: 100%; height: 200px; white-space: pre;"></textarea>
 </div>
 
 <script src="adapter.js"></script>
 <script>
     const localVideo = /** @type {HTMLVideoElement} */ document.getElementById("local-video");
-    const simulcastSelect = /** @type {HTMLSelectElement} */ document.getElementById('simulcast');
+    const remoteVideo = /** @type {HTMLVideoElement} */ document.getElementById("remote-video");
+    const simulcastSelect = /** @type {HTMLSelectElement} */ document.getElementById("simulcast");
+    const loopbackCheckbox = /** @type {HTMLInputElement} */ document.getElementById("loopback");
     const startButton = /** @type {HTMLButtonElement} */ document.getElementById("start-button");
-    const statsTextarea = /** @type {HTMLTextAreaElement} */ document.getElementById('stats');
+    const statsTextarea = /** @type {HTMLTextAreaElement} */ document.getElementById("stats");
 
     /**
      * @returns {Promise<WebSocket>}
@@ -95,7 +103,7 @@
 
             /** @type {RTCRtpTransceiverInit} */
             const config = {
-                direction: "sendonly",
+                direction: loopbackCheckbox.checked ? "sendrecv" : "sendonly",
                 streams: [userMedia],
             };
 
@@ -109,6 +117,10 @@
 
             peerConnection.addTransceiver(track, config);
         }
+
+        peerConnection.addEventListener('track', ev => {
+            remoteVideo.srcObject = ev.streams[0];
+        });
 
         startStatsGathering(peerConnection, statsTracks);
 

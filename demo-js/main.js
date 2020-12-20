@@ -58,11 +58,23 @@ wsServer.on('connection', socket => {
 
         console.dir(offer, { depth: null });
 
-        const offered = offer.getStreams().values().next().value;
+        const offered = offer.getFirstStream();
 
         console.dir(offered, { depth: null });
 
         const incomingStream = transport.createIncomingStream(offered);
+
+        let firstMedia = offer.getMedias()[0];
+        if (firstMedia.getDirection() === SemanticSDP.Direction.SENDRECV) {
+            const outgoingStream = transport.createOutgoingStream({
+                audio: offered.getFirstTrack("audio") !== null,
+                video: offered.getFirstTrack("video") !== null,
+            });
+
+            answer.addStream(outgoingStream.getStreamInfo());
+
+            const transponder = outgoingStream.attachTo(incomingStream);
+        }
 
         socket.send(JSON.stringify({
             type: 'answer',
