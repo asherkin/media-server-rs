@@ -51,6 +51,18 @@
             webSocket.addEventListener("open", () => {
                 console.log("WebSocket opened");
 
+                // Send a heartbeat message every 15 seconds so the connection
+                // does not get closed. The timeout appears to be 60 seconds.
+                const pingInterval = setInterval(() => {
+                    webSocket.send(JSON.stringify({
+                        type: "heartbeat",
+                    }));
+                }, 15000);
+
+                webSocket.addEventListener("close", () => {
+                    clearInterval(pingInterval);
+                })
+
                 resolve(webSocket);
             });
 

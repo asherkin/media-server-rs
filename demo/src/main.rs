@@ -40,6 +40,7 @@ fn parse_port_range(s: &str) -> Result<(u16, u16), String> {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 enum C2SMessage {
+    Heartbeat,
     Offer {
         #[serde(with = "serde_with::rust::display_fromstr")]
         sdp: UnifiedBundleSession,
@@ -390,6 +391,7 @@ async fn on_websocket_upgrade(opts: Arc<Opts>, mut websocket: warp::ws::WebSocke
         log::info!("parsed: {:?}", parsed);
 
         match parsed {
+            C2SMessage::Heartbeat => continue,
             C2SMessage::Offer { sdp } => {
                 match handle_offer(opts.clone(), &mut websocket, &sdp).await {
                     Ok(new_session) => session.replace(new_session),

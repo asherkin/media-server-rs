@@ -14,6 +14,10 @@ wsServer.on('connection', socket => {
         const parsed = JSON.parse(message);
         console.log(parsed);
 
+        if (parsed.type === 'heartbeat') {
+            return;
+        }
+
         if (parsed.type !== 'offer') {
             console.warn('unknown message:', parsed.type);
             return;
