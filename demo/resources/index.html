@@ -101,10 +101,13 @@
         for (let track of userMedia.getTracks()) {
             statsTracks.push(track);
 
+            // Add the track to a 2nd new stream, for testing SDP parsing on the server.
+            const testStream = new MediaStream([track]);
+
             /** @type {RTCRtpTransceiverInit} */
             const config = {
                 direction: loopbackCheckbox.checked ? "sendrecv" : "sendonly",
-                streams: [userMedia],
+                streams: [userMedia, testStream],
             };
 
             if (track.kind === "video" && simulcastSelect.value > 0) {

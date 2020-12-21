@@ -202,7 +202,7 @@ impl UnifiedBundleSession {
                 msids: self
                     .media_descriptions
                     .iter()
-                    .filter_map(|md| md.stream_id.clone())
+                    .flat_map(|md| md.stream_ids.clone())
                     .collect::<HashSet<_>>()
                     .into_iter()
                     .collect(),
@@ -317,8 +317,8 @@ pub struct RtpMediaDescription {
 
     pub extensions: HashMap<String, u16>,
 
-    pub stream_id: Option<String>,
     pub track_id: Option<String>,
+    pub stream_ids: Vec<String>,
 
     pub rtcp_mux: bool,
     pub rtcp_mux_only: bool,
@@ -350,8 +350,8 @@ impl RtpMediaDescription {
             direction: self.direction.reverse(),
             encodings,
             extensions: self.extensions.clone(),
-            stream_id: None,
             track_id: None,
+            stream_ids: Vec::new(),
             rtcp_mux: self.rtcp_mux,
             rtcp_mux_only: self.rtcp_mux_only,
             rtcp_reduced_size: self.rtcp_reduced_size,
@@ -462,13 +462,16 @@ impl RtpMediaDescription {
             _ => return Err("Multiple direction attributes found in m-line".to_owned()),
         };
 
-        let (stream_id, track_id) = match sdp.attributes.get::<MediaStreamId>() {
-            Some(msid) => (
-                if msid.id == "-" { None } else { Some(msid.id.clone()) },
-                msid.appdata.clone(),
-            ),
-            None => (None, None),
-        };
+        let track_id = sdp
+            .attributes
+            .get::<MediaStreamId>()
+            .and_then(|msid| msid.appdata.clone());
+
+        let stream_ids = sdp
+            .attributes
+            .get_vec::<MediaStreamId>()
+            .into_iter().filter_map(|msid| if msid.id == "-" { None } else { Some(msid.id.clone()) })
+            .collect();
 
         let rtcp_mux = sdp.attributes.get::<RtcpMux>().is_some();
         let rtcp_mux_only = sdp.attributes.get::<RtcpMuxOnly>().is_some();
@@ -563,8 +566,8 @@ impl RtpMediaDescription {
             direction,
             encodings,
             extensions,
-            stream_id,
             track_id,
+            stream_ids,
             rtcp_mux,
             rtcp_mux_only,
             rtcp_reduced_size,
@@ -621,8 +624,14 @@ impl RtpMediaDescription {
             MediaDirection::Inactive => attributes.append(Inactive),
         }
 
-        if self.stream_id.is_some() || self.track_id.is_some() {
-            let stream_id = self.stream_id.as_deref().unwrap_or("-");
+        if self.track_id.is_some() && self.stream_ids.is_empty() {
+            attributes.append(MediaStreamId {
+                id: "-".to_owned(),
+                appdata: self.track_id.clone(),
+            });
+        }
+
+        for stream_id in &self.stream_ids {
             attributes.append(MediaStreamId {
                 id: stream_id.to_owned(),
                 appdata: self.track_id.clone(),
@@ -708,8 +717,9 @@ impl RtpMediaDescription {
                         value: Some(cname.clone()),
                     });
 
-                    if self.stream_id.is_some() || self.track_id.is_some() {
-                        let stream_id = self.stream_id.as_deref().unwrap_or("-");
+                    if self.track_id.is_some() || !self.stream_ids.is_empty() {
+                        // These legacy attributes just use the first stream id.
+                        let stream_id = self.stream_ids.first().map_or("-", |id| id.as_str());
                         let mut msid_value = stream_id.to_owned();
                         if let Some(track_id) = &self.track_id {
                             msid_value += &format!(" {}", track_id);
@@ -743,8 +753,9 @@ impl RtpMediaDescription {
                             value: Some(cname.clone()),
                         });
 
-                        if self.stream_id.is_some() || self.track_id.is_some() {
-                            let stream_id = self.stream_id.as_deref().unwrap_or("-");
+                        if self.track_id.is_some() || !self.stream_ids.is_empty() {
+                            // These legacy attributes just use the first stream id.
+                            let stream_id = self.stream_ids.first().map_or("-", |id| id.as_str());
                             let mut msid_value = stream_id.to_owned();
                             if let Some(track_id) = &self.track_id {
                                 msid_value += &format!(" {}", track_id);

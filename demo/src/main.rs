@@ -328,7 +328,7 @@ async fn handle_offer(
                 }
 
                 answer_media_description.track_id = Some(track_id);
-                answer_media_description.stream_id = answer_stream_id.clone();
+                answer_media_description.stream_ids = answer_stream_id.iter().cloned().collect();
 
                 answer_media_description.encodings.push(RtpEncoding::SendingSsrc {
                     cname,

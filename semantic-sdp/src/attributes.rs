@@ -547,6 +547,7 @@ impl ParsableAttribute for Group {
 }
 
 // RFC 5576
+// TODO: We need to support using our attribute types inside these ideally.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct SsrcAttribute {
     pub ssrc: Ssrc,
